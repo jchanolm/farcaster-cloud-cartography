@@ -20,7 +20,7 @@ class DataFetcher:
 
         os.makedirs(self.data_dir, exist_ok=True)
 
-    def query_neynar_api(self, endpoint, params=None):
+    def query_neynar_hub(self, endpoint, params=None):
         """
         Queries the Neynar API with pagination support.
         """
@@ -67,6 +67,27 @@ class DataFetcher:
                         time.sleep(retry_delay)
                         retry_delay *= 2  # Exponential backoff
 
+    def query_neynar_api_for_users(self, fids):
+        """
+        Queries the Neynar API to get user objects for the given FIDs.
+        """
+        base_url = "https://api.neynar.com/v2/farcaster/user/bulk"
+        headers = {
+            "accept": "application/json",
+            "api_key": self.NEYNAR_API_KEY
+        }
+        params = {
+            "fids": ",".join(map(str, fids))
+        }
+
+        try:
+            response = r.get(base_url, headers=headers, params=params)
+            response.raise_for_status()
+            return response.json()
+        except RequestException as e:
+            print(f"Error querying Neynar API: {e}")
+            return None
+
     def is_data_stale(self, fid):
         """
         Checks if data for the given FID is missing or stale.
@@ -76,17 +97,69 @@ class DataFetcher:
             return True 
         file_mod_time = os.path.getmtime(filepath)
         return (time.time() - file_mod_time) > self.max_age_seconds
+    
+    def collect_connections_ids(self, user_object):
+        """
+        Collects a unique list of all FIDs from the user object's attributes.
+        
+        Args:
+            user_object (dict): A dictionary containing user data.
+        
+        Returns:
+            set: A set of unique FIDs collected from the user object.
+        """
+        unique_fids = set()
+        
+        if 'core_node_metadata' in user_object and 'fid' in user_object['core_node_metadata']:
+            unique_fids.add(user_object['core_node_metadata']['fid'])
+        
+        if 'follows' in user_object:
+            unique_fids.update(follow['target_fid'] for follow in user_object['follows'] if 'target_fid' in follow)
+        
+        if 'followers' in user_object:
+            unique_fids.update(follower['fid'] for follower in user_object['followers'] if 'fid' in follower)
+        
+        if 'likes' in user_object:
+            unique_fids.update(like['target_fid'] for like in user_object['likes'] if 'target_fid' in like)
+        
+        if 'recasts' in user_object:
+            unique_fids.update(recast['target_fid'] for recast in user_object['recasts'] if 'target_fid' in recast)
+        
+        return unique_fids
+
+    def get_user_metadata_for_connections(self, user_object):
+        all_fids = list(self.collect_connections_ids(user_object))
+        user_metadata_list = []
+
+        # Process FIDs in batches of 100
+        for i in range(0, len(all_fids), 100):
+            batch = all_fids[i:i+100]
+            response = self.query_neynar_api_for_users(batch)
+            
+            if response and 'users' in response:
+                for user in response['users']:
+                    user_metadata = {
+                        'fid': str(user['fid']), ### lazy lazy
+                        'username': user.get('username'),
+                        'display_name': user.get('display_name'),
+                        'pfp_url': user.get('pfp_url'),
+                        'follower_count': user.get('follower_count'),
+                        'following_count': user.get('following_count')
+                    }
+                    user_metadata_list.append(user_metadata)
+
+        return user_metadata_list
 
     def get_user_metadata(self, fid):
         """Fetches user metadata for a single FID."""
         endpoint = "userDataByFid"
         params = {'fid': fid, 'USER_DATA_TYPE': 'USER_DATA_TYPE_DISPLAY'}
-        messages = self.query_neynar_api(endpoint=endpoint, params=params)
+        messages = self.query_neynar_hub(endpoint=endpoint, params=params)
         
         user_data = {
             'bio': None,
             'username': None,
-            'fid': fid
+            'fid': str(fid)
         }
 
         for message in messages:
@@ -109,7 +182,7 @@ class DataFetcher:
             'fid': fid, 
             'link_type': 'follow'
         }
-        messages = self.query_neynar_api(endpoint=endpoint, params=params)
+        messages = self.query_neynar_hub(endpoint=endpoint, params=params)
 
         extracted_following = []
         for item in messages:
@@ -118,7 +191,7 @@ class DataFetcher:
                 timestamp = item['data'].get('timestamp')
                 if target_fid and timestamp:
                     extracted_following.append({
-                        'target_fid': target_fid,
+                        'target_fid': str(target_fid),
                         'timestamp': timestamp
                     })
         return extracted_following
@@ -130,18 +203,19 @@ class DataFetcher:
             'link_type': 'follow', 
             'target_fid': fid
         }
-        messages = self.query_neynar_api(endpoint, params)
+        messages = self.query_neynar_hub(endpoint, params)
 
         extracted_followers = []
         for item in messages:
             if "data" in item and "linkBody" in item["data"]:
-                follower_id = item['data']['linkBody'].get('fid')
+                follower_id = item['data'].get('fid')
                 timestamp = item['data'].get('timestamp')
                 if fid and timestamp:
                     extracted_followers.append({
-                        'fid': follower_id,
+                        'fid': str(follower_id),
                         'timestamp': timestamp 
                     })
+
         return extracted_followers
     
     def get_user_likes(self, fid):
@@ -151,7 +225,7 @@ class DataFetcher:
             'fid': fid,
             'reaction_type': 'REACTION_TYPE_LIKE'
         }
-        messages = self.query_neynar_api(endpoint, params)
+        messages = self.query_neynar_hub(endpoint, params)
 
         extracted_likes = []
         for item in messages:
@@ -164,7 +238,6 @@ class DataFetcher:
                         'target_hash': target_cast.get('hash'),
                         'timestamp': timestamp
                      })
-        print(extracted_likes)
         return extracted_likes
 
     def get_user_recasts(self, fid):
@@ -174,7 +247,7 @@ class DataFetcher:
             'fid': fid,
             'reaction_type': 'REACTION_TYPE_RECAST'
         }
-        messages = self.query_neynar_api(endpoint, params)
+        messages = self.query_neynar_hub(endpoint, params)
 
         extracted_recasts = []
         for item in messages:
@@ -192,18 +265,26 @@ class DataFetcher:
 
     def get_user_data(self, fid):
         """Assembles all data for a single user."""
-        return {
-            'metadata': self.get_user_metadata(fid),
-            'follows': self.get_user_follows(fid),
-            'followers': self.get_user_followers(fid),
-            'likes': self.get_user_likes(fid),
-            'recasts': self.get_user_recasts(fid)
+        follows = self.get_user_follows(fid)
+        followers = self.get_user_followers(fid)
+        likes = self.get_user_likes(fid)
+        recasts = self.get_user_recasts(fid)
+        
+        user_object = {
+            'core_node_metadata': self.get_user_metadata(fid),
+            'follows': follows,
+            'followers': followers,
+            'likes': likes,
+            'recasts': recasts
         }
+        
+        return user_object
 
     def get_all_users_data(self, fids):
         """Fetches and stores data for multiple users."""
         all_user_data = {}
         for fid in fids:
+            print(f"Fetching data for FID: {fid}")
             user_data = self.get_user_data(fid)
             all_user_data[fid] = user_data
 
@@ -211,13 +292,25 @@ class DataFetcher:
             with open(os.path.join(self.data_dir, filename), 'w') as f:
                 json.dump(user_data, f)
 
-        return all_user_data
+        print("Finished fetching individual user data. Now collecting connection metadata...")
 
+        # Collect connection metadata after fetching all individual user data
+        for fid, user_data in all_user_data.items():
+            print(f"Collecting connection metadata for FID: {fid}")
+            connections_metadata = self.get_user_metadata_for_connections(user_data)
+            user_data['connections_metadata'] = connections_metadata
+
+            # Update the stored JSON file with the new data
+            filename = f'user_{fid}_data.json'
+            with open(os.path.join(self.data_dir, filename), 'w') as f:
+                json.dump(user_data, f)
+
+        return all_user_data
             
 
 if __name__ == "__main__":
     fetcher = DataFetcher()
-    fetcher.get_all_users_data([190000])
+    fetcher.get_all_users_data([190000, 746])
     # user_data = fetcher.fetch_and_store_user_data([5, 1677])
     # follows = fetcher.get_user_follows([3])
     # followers = fetcher.get_user_followers([190000])
