@@ -99,41 +99,6 @@ class GraphBuilder:
 
         logging.info(f"Added {len(recasts_df)} RECASTED edges for FID {fid}")
 
-        # def add_edges_from_likes(self, G, fid, node_data):
-        # # Extract likes data into a list of dictionaries
-        # likes_data = node_data.get('likes', [])
-        
-        # # Create a DataFrame from the likes data
-        # likes_df = pd.DataFrame(likes_data)
-        
-        # # Add the source FID to the DataFrame
-        # likes_df['source_fid'] = fid
-        
-        # # Rename columns to match our desired edge attributes
-        # likes_df = likes_df.rename(columns={
-        #     'target_fid': 'target',
-        #     'source_fid': 'source',
-        #     'timestamp': 'timestamp',
-        #     'target_hash': 'target_hash'
-        # })
-        
-        # Add an edge_type column
-        # likes_df['edge_type'] = 'like'
-        
-        # # Select only the columns we want to use as edge attributes
-        # edge_attr_df = likes_df[['source', 'target', 'edge_type', 'timestamp', 'target_hash']]
-        
-        # # Convert DataFrame rows to a list of tuples (source, target, attr_dict)
-        # edge_tuples = [
-        #     (row['source'], row['target'], row.to_dict())
-        #     for _, row in edge_attr_df.iterrows()
-        # ]
-        
-        # # Add edges to the graph
-        # G.add_edges_from(edge_tuples)
-        
-        # print(f"Added {len(edge_tuples)} like edges for FID {fid}")
-
     def build_graph(self, fids):
         G = nx.MultiDiGraph()
         total_nodes_created = 0
@@ -159,83 +124,19 @@ class GraphBuilder:
         logging.info(f"Graph has {G.number_of_edges()} edges")
         return G            
         
+    def save_graph_as_json(self, G, fids):
+        graph_data = nx.node_link_data(G)
+        filename = f"graph_{'_'.join(fids)}.json"
+        filepath = os.path.join(self.processed_dir, filename)
+        
+        with open(filepath, 'w') as f:
+            json.dump(graph_data, f)
+        
+        logging.info(f"Graph saved as JSON to {filepath}")
 
-
-    
 
 if __name__ == "__main__":
     gb = GraphBuilder()
-    gb.build_graph(['746', '190000'])
-
-
-
-    #     for fid in fids:
-    #         data = self.load_data(fid)
-    #         if data:
-    #             G.add_node(fid, **data.get('attributes', {}))
-    #             connections = data.get('connections', [])
-    #             for connection in connections:
-    #                 if connection in fids:
-    #                     G.add_edge(fid, connection)
-
-    #     self.save_graph(G, time_value)
-    #     return G
-
-    # def save_graph(self, G: nx.Graph, time_value: int) -> None:
-    #     """
-    #     Saves the graph to a pickle file.
-
-    #     Parameters:
-    #     - G (nx.Graph): The graph to save.
-    #     - time_value (int): The time point associated with the graph.
-    #     """
-    #     filepath = os.path.join(self.processed_dir, f'graph_t{time_value}.pkl')
-    #     with open(filepath, 'wb') as f:
-    #         pickle.dump(G, f)
-    #     self.logger.info(f"Graph for time {time_value} saved to {filepath}.")
-
-    # def load_graph(self, time_value: int) -> Optional[nx.Graph]:
-    #     """
-    #     Loads a graph from a pickle file.
-
-    #     Parameters:
-    #     - time_value (int): The time point of the graph to load.
-
-    #     Returns:
-    #     - Optional[nx.Graph]: The loaded graph, or None if not found.
-    #     """
-    #     filepath = os.path.join(self.processed_dir, f'graph_t{time_value}.pkl')
-    #     if os.path.exists(filepath):
-    #         with open(filepath, 'rb') as f:
-    #             G = pickle.load(f)
-    #         return G
-    #     else:
-    #         self.logger.warning(f"No graph found for time {time_value}.")
-    #         return None
-
-    # def load_data(self, fid: str) -> Optional[Dict]:
-    #     """
-    #     Loads raw data for a given FID.
-
-    #     Parameters:
-    #     - fid (str): The Farcaster user ID.
-
-    #     Returns:
-    #     - Optional[Dict]: The loaded data, or None if not found.
-    #     """
-    #     data_fetcher = DataFetcher(data_dir=self.data_dir)
-    #     return data_fetcher.load_data(fid)
-
-    # def compute_degree_centrality(self, G: nx.Graph) -> Dict[str, float]:
-    #     """
-    #     Computes degree centrality for all nodes in the graph.
-
-    #     Parameters:
-    #     - G (nx.Graph): The graph to analyze.
-
-    #     Returns:
-    #     - Dict[str, float]: A dictionary of node IDs to their degree centrality.
-    #     """
-    #     return nx.degree_centrality(G)
-
-    # # Add more methods for other metrics and analyses as needed
+    fids = ['746', '190000']
+    graph = gb.build_graph(fids)
+    gb.save_graph_as_json(graph, fids)
