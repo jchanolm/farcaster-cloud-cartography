@@ -41,7 +41,7 @@ class GraphBuilder:
             'target_fid': 'target'
         })
         likes_df['source'] = fid
-        likes_df['edge_type'] = 'like'
+        likes_df['edge_type'] = 'LIKED'
         edge_attr_columns = ['edge_type', 'timestamp']
         G.add_edges_from(nx.from_pandas_edgelist(
             likes_df,
@@ -51,7 +51,54 @@ class GraphBuilder:
             create_using=nx.MultiDiGraph()
         ).edges(data=True))
 
-        logging.info(f"Added {len(likes_df)} like edges for FID {fid}")
+        logging.info(f"Added {len(likes_df)} LIKE edges for FID {fid}")
+    
+
+
+    def create_edges_for_followers(self, G, fid, node_data):
+        followers_data = node_data.get('followers', [])
+        followers_df = pd.DataFrame(followers_data)
+        edge_attr_columns = ['edge_type', 'timestamp']
+        G.add_edges_from(nx.from_pandas_edgelist(
+            followers_df, 
+            source='source',
+            target='target',
+            edge_attr=edge_attr_columns,
+            create_using=nx.MultiDiGraph()
+        ).edges(data=True))
+
+        logging.info(f"Added {len(followers_df)} incoming FOLLOWS edges for FID {fid}")
+
+
+    def create_edges_for_following(self, G, fid, node_data):
+        follows_data = node_data.get('follows', [])
+        follows_df = pd.DataFrame(follows_data)
+        edge_attr_columns = ['edge_type', 'timestamp']
+        G.add_edges_from(nx.from_pandas_edgelist(
+            follows_df, 
+            source='source',
+            target='target',
+            edge_attr=edge_attr_columns,
+            create_using=nx.MultiDiGraph()
+        ).edges(data=True))
+
+        logging.info(f"Added {len(follows_df)} outgoing FOLLOWS edges for FID {fid}")
+
+
+    def create_edges_for_recasts(self, G, fid, node_data):
+        recasts_data = node_data.get('recasts', [])
+        recasts_df = pd.DataFrame(recasts_data)
+        edge_attr_columns = ['edge_type', 'timestamp', 'target_hash']
+        G.add_edges_from(nx.from_pandas_edgelist(
+            recasts_df,
+            source='source',
+            target='target',
+            edge_attr=edge_attr_columns,
+            create_using=nx.MultiDiGraph
+        ).edges(data=True))
+
+        logging.info(f"Added {len(recasts_df)} RECASTED edges for FID {fid}")
+
         # def add_edges_from_likes(self, G, fid, node_data):
         # # Extract likes data into a list of dictionaries
         # likes_data = node_data.get('likes', [])
@@ -89,19 +136,28 @@ class GraphBuilder:
 
     def build_graph(self, fids):
         G = nx.MultiDiGraph()
+        total_nodes_created = 0
         for fid in fids:
             node_data = self.load_data(fid)
             for node in node_data["connections_metadata"]:
-                G.add_node(node['fid'], 
-                           username=node['username'],
-                           display_name=node['display_name'],
-                           pfp_url=node['pfp_url'],
-                           follower_count=node['follower_count'],
-                           following_count=node['following_count'])
+                if not G.has_node(node['fid']):
+                    G.add_node(node['fid'], 
+                               username=node['username'],
+                               display_name=node['display_name'],
+                               pfp_url=node['pfp_url'],
+                               follower_count=node['follower_count'],
+                               following_count=node['following_count'])
+                    total_nodes_created += 1
+        logging.info(f"Created {total_nodes_created} unique nodes across all FIDs: {fids}")
         for fid in fids:
             node_data = self.load_data(fid)
             self.create_edges_for_likes(G, fid, node_data)
-            
+            self.create_edges_for_followers(G, fid, node_data)
+            self.create_edges_for_following(G, fid, node_data)
+            self.create_edges_for_recasts(G, fid, node_data)
+        logging.info(f"Graph has {G.number_of_nodes()} nodes")
+        logging.info(f"Graph has {G.number_of_edges()} edges")
+        return G            
         
 
 

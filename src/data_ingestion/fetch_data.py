@@ -83,9 +83,15 @@ class DataFetcher:
         try:
             response = r.get(base_url, headers=headers, params=params)
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            if 'users' not in data:
+                print(f"Unexpected response format. Response: {data}")
+            return data
         except RequestException as e:
             print(f"Error querying Neynar API: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"Response status code: {e.response.status_code}")
+                print(f"Response content: {e.response.content}")
             return None
 
     def is_data_stale(self, fid):
@@ -114,16 +120,16 @@ class DataFetcher:
             unique_fids.add(user_object['core_node_metadata']['fid'])
         
         if 'follows' in user_object:
-            unique_fids.update(follow['target_fid'] for follow in user_object['follows'] if 'target_fid' in follow)
+            unique_fids.update(follow['target'] for follow in user_object['follows'] if 'target' in follow)
         
         if 'followers' in user_object:
-            unique_fids.update(follower['fid'] for follower in user_object['followers'] if 'fid' in follower)
+            unique_fids.update(follower['source'] for follower in user_object['followers'] if 'source' in follower)
         
         if 'likes' in user_object:
-            unique_fids.update(like['target_fid'] for like in user_object['likes'] if 'target_fid' in like)
+            unique_fids.update(like['target'] for like in user_object['likes'] if 'target' in like)
         
         if 'recasts' in user_object:
-            unique_fids.update(recast['target_fid'] for recast in user_object['recasts'] if 'target_fid' in recast)
+            unique_fids.update(recast['target'] for recast in user_object['recasts'] if 'target' in recast)
         
         return unique_fids
 
@@ -191,8 +197,10 @@ class DataFetcher:
                 timestamp = item['data'].get('timestamp')
                 if target_fid and timestamp:
                     extracted_following.append({
-                        'target_fid': str(target_fid),
-                        'timestamp': timestamp
+                        'source': fid,
+                        'target': str(target_fid),
+                        'timestamp': timestamp,
+                        'edge_type': 'FOLLOWS'
                     })
         return extracted_following
     
@@ -210,10 +218,12 @@ class DataFetcher:
             if "data" in item and "linkBody" in item["data"]:
                 follower_id = item['data'].get('fid')
                 timestamp = item['data'].get('timestamp')
-                if fid and timestamp:
+                if follower_id and timestamp:
                     extracted_followers.append({
-                        'fid': str(follower_id),
-                        'timestamp': timestamp 
+                        'source': str(follower_id), 
+                        'target': str(fid),
+                        'timestamp': timestamp ,
+                        'edge_type': 'FOLLOWS'
                     })
 
         return extracted_followers
@@ -256,9 +266,11 @@ class DataFetcher:
                 timestamp = item['data'].get('timestamp')
                 if target_cast and timestamp:
                     extracted_recasts.append({
-                        'target_fid': target_cast.get('fid'),
+                        'source': fid,
+                        'target': target_cast.get('fid'),
                         'target_hash': target_cast.get('hash'),
-                        'timestamp': timestamp
+                        'timestamp': timestamp,
+                        'edge_type': 'RECASTED'
                      })
         return extracted_recasts
 
@@ -299,7 +311,6 @@ class DataFetcher:
             print(f"Collecting connection metadata for FID: {fid}")
             connections_metadata = self.get_user_metadata_for_connections(user_data)
             user_data['connections_metadata'] = connections_metadata
-
             # Update the stored JSON file with the new data
             filename = f'user_{fid}_data.json'
             with open(os.path.join(self.data_dir, filename), 'w') as f:
