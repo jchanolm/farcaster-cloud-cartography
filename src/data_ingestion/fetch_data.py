@@ -119,18 +119,24 @@ class DataFetcher:
         if 'core_node_metadata' in user_object and 'fid' in user_object['core_node_metadata']:
             unique_fids.add(user_object['core_node_metadata']['fid'])
         
-        if 'follows' in user_object:
-            unique_fids.update(follow['target'] for follow in user_object['follows'] if 'target' in follow)
+        # if 'follows' in user_object:
+        #     unique_fids.update(follow['target'] for follow in user_object['follows'] if 'target' in follow)
         
-        if 'followers' in user_object:
-            unique_fids.update(follower['source'] for follower in user_object['followers'] if 'source' in follower)
+        # if 'followers' in user_object:
+        #     unique_fids.update(follower['source'] for follower in user_object['followers'] if 'source' in follower)
         
         if 'likes' in user_object:
             unique_fids.update(like['target'] for like in user_object['likes'] if 'target' in like)
+            unique_fids.update(like['source'] for like in user_object['likes'] if 'source' in like)
         
         if 'recasts' in user_object:
             unique_fids.update(recast['target'] for recast in user_object['recasts'] if 'target' in recast)
+            unique_fids.update(recast['source'] for recast in user_object['recasts'] if 'source' in recast)
         
+        if 'casts' in user_object:
+            unique_fids.update(cast['target'] for cast in user_object['casts'] if 'target' in cast)
+            unique_fids.update(cast['source'] for cast in user_object['casts'] if 'source' in cast)
+
         return unique_fids
 
     def get_user_metadata_for_connections(self, user_object):
@@ -185,7 +191,7 @@ class DataFetcher:
         """Fetches users followed by provided Farcaster ID"""
         endpoint = "linksByFid"
         params = {
-            'fid': fid, 
+            'fid': str(fid), 
             'link_type': 'follow'
         }
         messages = self.query_neynar_hub(endpoint=endpoint, params=params)
@@ -197,7 +203,7 @@ class DataFetcher:
                 timestamp = item['data'].get('timestamp')
                 if target_fid and timestamp:
                     extracted_following.append({
-                        'source': fid,
+                        'source': str(fid),
                         'target': str(target_fid),
                         'timestamp': timestamp,
                         'edge_type': 'FOLLOWS'
@@ -244,9 +250,11 @@ class DataFetcher:
                 timestamp = item['data'].get('timestamp')
                 if target_cast and timestamp:
                     extracted_likes.append({
-                        'target_fid': target_cast.get('fid'),
+                        'source': str(fid),
+                        'target': str(target_cast.get('fid')),
                         'target_hash': target_cast.get('hash'),
-                        'timestamp': timestamp
+                        'timestamp': timestamp,
+                        'edge_type': 'LIKED'
                      })
         return extracted_likes
 
@@ -266,28 +274,53 @@ class DataFetcher:
                 timestamp = item['data'].get('timestamp')
                 if target_cast and timestamp:
                     extracted_recasts.append({
-                        'source': fid,
-                        'target': target_cast.get('fid'),
+                        'source': str(fid),
+                        'target': str(target_cast.get('fid')),
                         'target_hash': target_cast.get('hash'),
                         'timestamp': timestamp,
                         'edge_type': 'RECASTED'
                      })
         return extracted_recasts
 
+    def get_user_casts(self, fid):
+        print(f"Collecting casts for user {fid}.....")
+        endpoint = "castsByFid"
+        params = {'fid': fid}
+        messages = self.query_neynar_hub(endpoint=endpoint, params=params)
+
+        cast_data_list = []
+        for message in messages:
+            if 'data' in message and 'castAddBody' in message['data']:
+                cast_add_body = message['data']['castAddBody']
+                parent_cast = cast_add_body.get('parentCastId')
+                if parent_cast:
+                    cast_data = {
+                        'source': str(fid),
+                        'target': str(parent_cast['fid']),
+                        'timestamp': message['data']['timestamp'],
+                        'edge_type': 'REPLIED'
+                    }
+                    cast_data_list.append(cast_data)
+        print(f"Retrieved {len(cast_data_list)} replies for user: {fid}...")
+        return cast_data_list
+
+
 
     def get_user_data(self, fid):
         """Assembles all data for a single user."""
-        follows = self.get_user_follows(fid)
-        followers = self.get_user_followers(fid)
+        # follows = self.get_user_follows(fid)
+        # followers = self.get_user_followers(fid)
         likes = self.get_user_likes(fid)
         recasts = self.get_user_recasts(fid)
+        casts = self.get_user_casts(fid)
         
         user_object = {
             'core_node_metadata': self.get_user_metadata(fid),
-            'follows': follows,
-            'followers': followers,
+            # 'follows': follows,
+            # 'followers': followers,
             'likes': likes,
-            'recasts': recasts
+            'recasts': recasts,
+            'casts': casts
         }
         
         return user_object
@@ -321,11 +354,10 @@ class DataFetcher:
 
 if __name__ == "__main__":
     fetcher = DataFetcher()
-    fetcher.get_all_users_data([190000, 988])
+    fetcher.get_all_users_data(['988', '746'])
     # user_data = fetcher.fetch_and_store_user_data([5, 1677])
     # follows = fetcher.get_user_follows([3])
     # followers = fetcher.get_user_followers([190000])
     # likes = fetcher.get_user_likes([190000])
     # recasts = fetcher.get_user_recasts([3])
-
 
