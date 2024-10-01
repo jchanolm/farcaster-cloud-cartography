@@ -153,6 +153,6 @@ class GraphBuilder:
 
 if __name__ == "__main__":
     gb = GraphBuilder()
-    fids = ['988', '746']
+    fids = ['988', '746', '190000', '378']
     graph = gb.build_graph(fids)
     gb.save_graph_as_json(graph, fids)

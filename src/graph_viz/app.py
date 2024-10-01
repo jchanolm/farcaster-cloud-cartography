@@ -1,33 +1,30 @@
 from dash import Dash
 from dash import html, dcc 
-from dash.dependencies import Input, Output
+from dash.dependencies import Input, Output, State
 import dash_cytoscape as cyto
 import json 
 import networkx as nx 
 import os 
-
+from collections import Counter
+import numpy as np
 
 cyto.load_extra_layouts()
 
 app = Dash(__name__)
-
 
 def load_graph(filename):
     filepath = os.path.join('data/processed', filename)
     with open(filepath, 'r') as f:
         graph_data = json.load(f)
 
-    # Create a MultiDiGraph
     G = nx.MultiDiGraph()
 
-    # Add nodes
     for node in graph_data['nodes']:
         node_id = node['id']
         node_attrs = node.copy()
         del node_attrs['id']
         G.add_node(node_id, **node_attrs)
 
-    # Add edges
     for edge in graph_data['links']:
         edge_attrs = edge.copy()
         source = edge_attrs.pop('source')
@@ -37,88 +34,183 @@ def load_graph(filename):
 
     return G
 
-def filter_graph(G, core_nodes):
-    filtered_nodes = set()
+def calculate_connection_strength(G, core_nodes):
+    connection_strength = {}
     for node in G.nodes():
-        if all(node in G.neighbors(core_node) for core_node in core_nodes) and node not in core_nodes:
-            filtered_nodes.add(node)
-    filtered_nodes.update(core_nodes)  # Ensure core nodes are included
-    return G.subgraph(filtered_nodes)
+        if node not in core_nodes:
+            strengths = []
+            for core_node in core_nodes:
+                edge_count = len(G.get_edge_data(node, core_node, default={})) + len(G.get_edge_data(core_node, node, default={}))
+                strengths.append(edge_count)
+            connection_strength[node] = min(strengths) if strengths else 0
+    return connection_strength
 
-G = load_graph('graph_988_746.json')
-core_nodes = ['988', '746']
+def filter_graph(G, core_nodes, top_n=25):
+    connection_strength = calculate_connection_strength(G, core_nodes)
+    top_nodes = sorted(connection_strength, key=connection_strength.get, reverse=True)[:top_n]
+    filtered_nodes = set(top_nodes + core_nodes)
+    return G.subgraph(filtered_nodes).copy()
+
+G = load_graph('graph_988_746_190000_378.json')
+core_nodes = ['988', '746', '190000', '378']
 filtered_G = filter_graph(G, core_nodes)
 
-cyto_elements = []
+# Remove user dwr (id "3") from the graph if it exists
+if "3" in filtered_G:
+    filtered_G.remove_node("3")
 
-for node, data in filtered_G.nodes(data=True):
-    cyto_elements.append({
-        'data': {
-            'id': str(node),
-            'label': data.get('username', str(node)),
-            'size': data.get('follower_count', 10),
-            'fid': str(node),
-            'display_name': data.get('username', 'N/A'),
-            'follower_count': data.get('follower_count', 0),
-            'following_count': data.get('following_count', 0)
-        }
-    })
+connection_strength = calculate_connection_strength(filtered_G, core_nodes)
+max_strength = max(connection_strength.values()) if connection_strength else 1
 
-for edge in filtered_G.edges():
-    if edge[0] != edge[1]:  # Remove self edges
+# Get all timestamps and sort them
+all_timestamps = sorted([edge[2]['timestamp'] for edge in filtered_G.edges(data=True)])
+min_timestamp, max_timestamp = min(all_timestamps), max(all_timestamps)
+
+def normalize_value(value, min_val, max_val, new_min, new_max):
+    if max_val == min_val:
+        return new_min
+    return ((value - min_val) / (max_val - min_val)) * (new_max - new_min) + new_min
+
+def get_elements_at_timestamp(G, timestamp, prev_timestamp=None):
+    cyto_elements = []
+    active_nodes = set(core_nodes)  # Initialize with core nodes
+
+    edge_dict = {}
+    for edge in G.edges(data=True):
+        if edge[2]['timestamp'] <= timestamp:
+            source = str(edge[0])
+            target = str(edge[1])
+            active_nodes.add(source)
+            active_nodes.add(target)
+            if source != target:
+                edge_type = edge[2].get('edge_type', 'Unknown')
+                key = (source, target)
+                if key not in edge_dict:
+                    edge_dict[key] = {
+                        'data': {
+                            'source': source,
+                            'target': target,
+                            'weight': 1,
+                            'edge_types': Counter([edge_type])
+                        }
+                    }
+                else:
+                    edge_dict[key]['data']['weight'] += 1
+                    edge_dict[key]['data']['edge_types'][edge_type] += 1
+
+    # Normalize edge weights
+    if edge_dict:
+        max_weight = max(edge['data']['weight'] for edge in edge_dict.values())
+        for edge in edge_dict.values():
+            normalized_weight = normalize_value(edge['data']['weight'], 1, max_weight, 0.5, 3)  # Reduced thickness range
+            edge['data']['normalized_weight'] = normalized_weight
+
+    # Calculate node degree
+    node_degree = dict(filtered_G.degree(active_nodes))
+    max_degree = max(node_degree.values()) if node_degree else 1
+
+    for node in active_nodes:
+        data = G.nodes[node]
+        is_core = node in core_nodes
+
+        # Size non-core nodes based on degree, all smaller than core nodes
+        if is_core:
+            node_size = 25
+        else:
+            node_size = normalize_value(node_degree.get(node, 0), 1, max_degree, 10, 20)
+
         cyto_elements.append({
-            'data': {'source': str(edge[0]), 'target': str(edge[1])}
+            'data': {
+                'id': node,
+                'label': data.get('username', node),
+                'size': node_size,
+                'fid': node,
+                'display_name': data.get('username', 'N/A'),
+                'follower_count': data.get('follower_count', 0),
+                'following_count': data.get('following_count', 0),
+                'is_core': 'true' if is_core else 'false'
+            }
         })
+
+    cyto_elements.extend(list(edge_dict.values()))
+
+    return cyto_elements
 
 app.layout = html.Div([
     html.H1("Farcaster Network Visualization"),
-    dcc.Dropdown(
-        id='layout-dropdown',
-        options=[
-            {'label': 'Circle', 'value': 'circle'},
-            {'label': 'Concentric', 'value': 'concentric'},
-            {'label': 'Cose', 'value': 'cose'},
-            {'label': 'Grid', 'value': 'grid'},
-            {'label': 'Breadthfirst', 'value': 'breadthfirst'},
-            {'label': 'Cose-Bilkent', 'value': 'cose-bilkent'},
-            {'label': 'Dagre', 'value': 'dagre'},
-            {'label': 'Klay', 'value': 'klay'},
-        ],
-        value='cose-bilkent',
-        clearable=False
-    ),
-    cyto.Cytoscape(
-        id='cytoscape-graph',
-        elements=cyto_elements,
-        style={'width': '100%', 'height': '600px'},
-        layout={
-            'name': 'cose-bilkent'
-        },
-        stylesheet=[
-            {
-                'selector': 'node',
-                'style': {
-                    'content': 'data(label)',
-                    'font-size': '8px',
-                    'text-opacity': 0.7,
-                    'text-valign': 'center',
-                    'text-halign': 'right',
-                    'background-color': '#4287f5',
-                    'width': 'mapData(size, 0, 1000, 10, 60)',
-                    'height': 'mapData(size, 0, 1000, 10, 60)'
-                }
-            },
-            {
-                'selector': 'edge',
-                'style': {
-                    'width': 1,
-                    'opacity': 0.6,
-                    'curve-style': 'bezier'
-                }
-            }
-        ]
-    ),
-    html.Div(id='node-data')
+    html.Div([
+        html.Div([
+            dcc.Dropdown(
+                id='layout-dropdown',
+                options=[
+                    {'label': 'Circle', 'value': 'circle'},
+                    {'label': 'Concentric', 'value': 'concentric'},
+                    {'label': 'Cose', 'value': 'cose'},
+                    {'label': 'Grid', 'value': 'grid'},
+                    {'label': 'Breadthfirst', 'value': 'breadthfirst'},
+                    {'label': 'Cose-Bilkent', 'value': 'cose-bilkent'},
+                    {'label': 'Dagre', 'value': 'dagre'},
+                    {'label': 'Klay', 'value': 'klay'},
+                ],
+                value='cose-bilkent',
+                clearable=False
+            ),
+            dcc.Slider(
+                id='time-slider',
+                min=min_timestamp,
+                max=max_timestamp,
+                value=min_timestamp,
+                marks={str(ts): str(ts) for ts in range(min_timestamp, max_timestamp + 1, max(1, (max_timestamp - min_timestamp) // 10))},
+                step=None
+            ),
+            cyto.Cytoscape(
+                id='cytoscape-graph',
+                elements=get_elements_at_timestamp(filtered_G, min_timestamp),
+                style={'width': '100%', 'height': '800px'},
+                layout={
+                    'name': 'cose-bilkent',
+                    'animate': False
+                },
+                stylesheet=[
+                    {
+                        'selector': 'node',
+                        'style': {
+                            'content': 'data(label)',
+                            'font-size': '8.4px',  # Reduced by 30% from 12px
+                            'text-opacity': 1,
+                            'text-valign': 'center',
+                            'text-halign': 'center',
+                            'background-color': '#808080',
+                            'width': 'data(size)',
+                            'height': 'data(size)',
+                            'color': '#ffffff',
+                            'text-outline-color': '#000000',
+                            'text-outline-width': 2
+                        }
+                    },
+                    {
+                        'selector': 'node[is_core = "true"]',
+                        'style': {
+                            'background-color': '#00ff00'
+                        }
+                    },
+                    {
+                        'selector': 'edge',
+                        'style': {
+                            'width': 'data(normalized_weight)',
+                            'opacity': 0.8,
+                            'curve-style': 'bezier',
+                            'line-color': '#000000'
+                        }
+                    }
+                ]
+            )
+        ], style={'width': '80%', 'display': 'inline-block', 'vertical-align': 'top'}),
+        html.Div([
+            html.Div(id='node-data'),
+            html.Div(id='edge-data')
+        ], style={'width': '20%', 'display': 'inline-block', 'vertical-align': 'top'})
+    ])
 ])
 
 @app.callback(
@@ -145,6 +237,29 @@ def display_node_data(data):
         html.P(f"Followers: {data['follower_count']}"),
         html.P(f"Following: {data['following_count']}")
     ])
+
+@app.callback(
+    Output('edge-data', 'children'),
+    Input('cytoscape-graph', 'tapEdgeData')
+)
+def display_edge_data(data):
+    if not data:
+        return "Click on an edge to see its details"
+    edge_types = data.get('edge_types', {})
+    return html.Div([
+        html.H3(f"Edge: {data['source']} -> {data['target']}"),
+        html.P(f"Total Weight: {data['weight']}"),
+        html.P(f"Normalized Weight: {data['normalized_weight']:.2f}"),
+        html.H4("Edge Type Counts:"),
+        html.Ul([html.Li(f"{edge_type}: {count}") for edge_type, count in edge_types.items()])
+    ])
+
+@app.callback(
+    Output('cytoscape-graph', 'elements'),
+    Input('time-slider', 'value')
+)
+def update_graph(selected_timestamp):
+    return get_elements_at_timestamp(filtered_G, selected_timestamp)
 
 if __name__ == '__main__':
     app.run_server(debug=True)
