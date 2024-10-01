@@ -45,7 +45,7 @@ def calculate_connection_strength(G, core_nodes):
             connection_strength[node] = min(strengths) if strengths else 0
     return connection_strength
 
-def filter_graph(G, core_nodes, top_n=25):
+def filter_graph(G, core_nodes, top_n=50):
     connection_strength = calculate_connection_strength(G, core_nodes)
     top_nodes = sorted(connection_strength, key=connection_strength.get, reverse=True)[:top_n]
     filtered_nodes = set(top_nodes + core_nodes)
@@ -61,6 +61,10 @@ if "3" in filtered_G:
 
 connection_strength = calculate_connection_strength(filtered_G, core_nodes)
 max_strength = max(connection_strength.values()) if connection_strength else 1
+
+# Calculate centrality and betweenness
+centrality = nx.degree_centrality(filtered_G)
+betweenness = nx.betweenness_centrality(filtered_G)
 
 # Get all timestamps and sort them
 all_timestamps = sorted([edge[2]['timestamp'] for edge in filtered_G.edges(data=True)])
@@ -102,22 +106,29 @@ def get_elements_at_timestamp(G, timestamp, prev_timestamp=None):
     if edge_dict:
         max_weight = max(edge['data']['weight'] for edge in edge_dict.values())
         for edge in edge_dict.values():
-            normalized_weight = normalize_value(edge['data']['weight'], 1, max_weight, 0.5, 3)  # Reduced thickness range
+            normalized_weight = normalize_value(edge['data']['weight'], 1, max_weight, 0.5, 3)
             edge['data']['normalized_weight'] = normalized_weight
 
-    # Calculate node degree
+    # Calculate node metrics
     node_degree = dict(filtered_G.degree(active_nodes))
     max_degree = max(node_degree.values()) if node_degree else 1
+    max_centrality = max(centrality.values()) if centrality else 1
+    max_betweenness = max(betweenness.values()) if betweenness else 1
 
     for node in active_nodes:
         data = G.nodes[node]
         is_core = node in core_nodes
 
-        # Size non-core nodes based on degree, all smaller than core nodes
+        # Size nodes based on centrality and betweenness
         if is_core:
-            node_size = 25
+            node_size = 40  # Increased from 30 to 40
         else:
-            node_size = normalize_value(node_degree.get(node, 0), 1, max_degree, 10, 20)
+            centrality_factor = normalize_value(centrality.get(node, 0), 0, max_centrality, 0, 1)
+            betweenness_factor = normalize_value(betweenness.get(node, 0), 0, max_betweenness, 0, 1)
+            node_size = normalize_value(centrality_factor + betweenness_factor, 0, 2, 20, 80)
+
+        # Color nodes based on betweenness centrality
+        node_color = f"rgb({int(255 * betweenness.get(node, 0) / max_betweenness)}, 0, 255)"
 
         cyto_elements.append({
             'data': {
@@ -128,11 +139,16 @@ def get_elements_at_timestamp(G, timestamp, prev_timestamp=None):
                 'display_name': data.get('username', 'N/A'),
                 'follower_count': data.get('follower_count', 0),
                 'following_count': data.get('following_count', 0),
-                'is_core': 'true' if is_core else 'false'
+                'is_core': 'true' if is_core else 'false',
+                'centrality': centrality.get(node, 0),
+                'betweenness': betweenness.get(node, 0),
+                'color': node_color
             }
         })
 
-    cyto_elements.extend(list(edge_dict.values()))
+    # Only include edges if it's not the initial stage
+    if timestamp > min_timestamp:
+        cyto_elements.extend(list(edge_dict.values()))
 
     return cyto_elements
 
@@ -169,18 +185,21 @@ app.layout = html.Div([
                 style={'width': '100%', 'height': '800px'},
                 layout={
                     'name': 'cose-bilkent',
-                    'animate': False
+                    'animate': False,
+                    'nodeRepulsion': 20000,  # Decreased from 25000 to 20000 (20% reduction)
+                    'idealEdgeLength': 320,  # Decreased from 400 to 320 (20% reduction)
+                    'nodeDimensionsIncludeLabels': True
                 },
                 stylesheet=[
                     {
                         'selector': 'node',
                         'style': {
                             'content': 'data(label)',
-                            'font-size': '8.4px',  # Reduced by 30% from 12px
-                            'text-opacity': 1,
+                            'font-size': '10px',
+                            'text-opacity': 0.8,
                             'text-valign': 'center',
                             'text-halign': 'center',
-                            'background-color': '#808080',
+                            'background-color': '#808080',  # Set non-core nodes to gray
                             'width': 'data(size)',
                             'height': 'data(size)',
                             'color': '#ffffff',
@@ -198,7 +217,7 @@ app.layout = html.Div([
                         'selector': 'edge',
                         'style': {
                             'width': 'data(normalized_weight)',
-                            'opacity': 0.8,
+                            'opacity': 0.6,
                             'curve-style': 'bezier',
                             'line-color': '#000000'
                         }
@@ -220,7 +239,10 @@ app.layout = html.Div([
 def update_layout(layout):
     return {
         'name': layout,
-        'animate': True
+        'animate': True,
+        'nodeRepulsion': 20000,  # Decreased from 25000 to 20000 (20% reduction)
+        'idealEdgeLength': 320,  # Decreased from 400 to 320 (20% reduction)
+        'nodeDimensionsIncludeLabels': True
     }
 
 @app.callback(
@@ -235,7 +257,9 @@ def display_node_data(data):
         html.P(f"FID: {data['fid']}"),
         html.P(f"Display Name: {data['display_name']}"),
         html.P(f"Followers: {data['follower_count']}"),
-        html.P(f"Following: {data['following_count']}")
+        html.P(f"Following: {data['following_count']}"),
+        html.P(f"Centrality: {data['centrality']:.4f}"),
+        html.P(f"Betweenness: {data['betweenness']:.4f}")
     ])
 
 @app.callback(
