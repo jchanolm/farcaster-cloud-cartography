@@ -354,7 +354,7 @@ class DataFetcher:
 
 if __name__ == "__main__":
     fetcher = DataFetcher()
-    fetcher.get_all_users_data(['1289'])
+    fetcher.get_all_users_data(['988', '378', '190000', '746'])
     # user_data = fetcher.fetch_and_store_user_data([5, 1677])
     # follows = fetcher.get_user_follows([3])
     # followers = fetcher.get_user_followers([190000])

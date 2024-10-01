@@ -1,10 +1,10 @@
 from dash import Dash
-from dash import html, dcc 
+from dash import html, dcc
 from dash.dependencies import Input, Output, State
 import dash_cytoscape as cyto
-import json 
-import networkx as nx 
-import os 
+import json
+import networkx as nx
+import os
 from collections import Counter
 import numpy as np
 from datetime import datetime
@@ -46,23 +46,25 @@ def calculate_connection_strength(G, core_nodes):
             connection_strength[node] = min(strengths) if strengths else 0
     return connection_strength
 
-def filter_graph(G, core_nodes, top_n=25):
+def filter_graph(G, core_nodes, top_n=50):
     connection_strength = calculate_connection_strength(G, core_nodes)
     top_nodes = sorted(connection_strength, key=connection_strength.get, reverse=True)[:top_n]
     filtered_nodes = set(top_nodes + core_nodes)
     return G.subgraph(filtered_nodes).copy()
 
-G = load_graph('graph_746_190000_1289.json')
-core_nodes = ['746', '190000', '1289']
+G = load_graph('graph_988_378_190000_746.json')
+core_nodes = ['988', '378', '190000', '746']
 filtered_G = filter_graph(G, core_nodes)
 
 # Remove user dwr (id "3") from the graph if it exists
 if "3" in filtered_G:
     filtered_G.remove_node("3")
 
-# Calculate centrality and betweenness
-centrality = nx.degree_centrality(filtered_G)
-betweenness = nx.betweenness_centrality(filtered_G)
+# Calculate centrality and betweenness for non-core nodes only
+non_core_nodes = [node for node in filtered_G.nodes() if node not in core_nodes]
+non_core_subgraph = filtered_G.subgraph(non_core_nodes)
+centrality = nx.degree_centrality(non_core_subgraph)
+betweenness = nx.betweenness_centrality(non_core_subgraph)
 
 # Get all timestamps and sort them
 all_timestamps = sorted([edge[2]['timestamp'] for edge in filtered_G.edges(data=True)])
@@ -107,11 +109,11 @@ def get_elements_at_timestamp(G, timestamp):
                     edge_dict[key]['data']['weight'] += 1
                     edge_dict[key]['data']['edge_types'][edge_type] += 1
 
-    # Normalize edge weights
+    # Normalize edge weights and increase thickness for relationships with lots of interactions
     if edge_dict:
         max_weight = max(edge['data']['weight'] for edge in edge_dict.values())
         for edge in edge_dict.values():
-            normalized_weight = normalize_value(edge['data']['weight'], 1, max_weight, 0.75, 3.75)  # Reduced by 75% from 3-15 to 0.75-3.75
+            normalized_weight = normalize_value(edge['data']['weight'], 1, max_weight, 1.5, 15)  # Increased max thickness by 2x
             edge['data']['normalized_weight'] = normalized_weight
 
     # Build a temporary graph up to the current timestamp
@@ -148,7 +150,7 @@ def get_elements_at_timestamp(G, timestamp):
         else:
             edge['data']['highlight'] = 'false'
 
-    # Calculate node metrics
+    # Calculate node metrics for non-core nodes
     max_centrality = max(centrality.values()) if centrality else 1
     max_betweenness = max(betweenness.values()) if betweenness else 1
 
@@ -156,16 +158,26 @@ def get_elements_at_timestamp(G, timestamp):
         data = G.nodes[node]
         is_core = node in core_nodes
 
-        # Size nodes based on centrality and betweenness
+        # Calculate the number of core nodes this node is connected to
+        connected_core_nodes = sum(1 for core_node in core_nodes if temp_G.has_edge(node, core_node))
+        
+        # Size nodes based on how many core nodes they're connected to
         if is_core:
-            node_size = 90  # Increased from 60 to 90 (50% increase)
+            node_size = 112.5  # Base size for core nodes
         else:
-            centrality_factor = normalize_value(centrality.get(node, 0), 0, max_centrality, 0, 1)
-            betweenness_factor = normalize_value(betweenness.get(node, 0), 0, max_betweenness, 0, 1)
-            node_size = normalize_value(centrality_factor + betweenness_factor, 0, 2, 45, 150)  # Increased from 30-100 to 45-150 (50% increase)
+            base_size = 45  # Base size for non-core nodes
+            size_multiplier = 1 + (connected_core_nodes - 1) * 0.5  # Linear increase: 1, 1.5, 2, 2.5, ...
+            node_size = base_size * size_multiplier
 
-        # Color nodes based on betweenness centrality
-        node_color = f"rgb({int(255 * betweenness.get(node, 0) / max_betweenness)}, 0, 255)"
+        # Color nodes
+        if is_core:
+            node_color = "rgb(0, 255, 0)"  # Green color for core nodes
+        else:
+            # Color non-core nodes based on betweenness centrality
+            if max_betweenness > 0:
+                node_color = f"rgb({int(255 * betweenness.get(node, 0) / max_betweenness)}, 0, 255)"
+            else:
+                node_color = "rgb(0, 0, 255)"  # Default color if max_betweenness is 0
 
         cyto_elements.append({
             'data': {
@@ -177,9 +189,10 @@ def get_elements_at_timestamp(G, timestamp):
                 'follower_count': data.get('follower_count', 0),
                 'following_count': data.get('following_count', 0),
                 'is_core': 'true' if is_core else 'false',
-                'centrality': centrality.get(node, 0),
-                'betweenness': betweenness.get(node, 0),
-                'color': node_color
+                'centrality': centrality.get(node, 0) if not is_core else 'N/A',
+                'betweenness': betweenness.get(node, 0) if not is_core else 'N/A',
+                'color': node_color,
+                'connected_core_nodes': connected_core_nodes
             }
         })
 
@@ -187,7 +200,7 @@ def get_elements_at_timestamp(G, timestamp):
     if timestamp > min_timestamp:
         cyto_elements.extend(list(edge_dict.values()))
 
-    return cyto_elements
+    return cyto_elements, temp_G
 
 app.layout = html.Div([
     html.H1("Farcaster Network Visualization"),
@@ -218,62 +231,74 @@ app.layout = html.Div([
             ),
             cyto.Cytoscape(
                 id='cytoscape-graph',
-                elements=get_elements_at_timestamp(filtered_G, min_timestamp),
+                elements=get_elements_at_timestamp(filtered_G, min_timestamp)[0],
                 style={'width': '100%', 'height': '800px'},
                 layout={
                     'name': 'cose-bilkent',
                     'animate': False,
-                    'nodeRepulsion': 34453,  # Increased by 50% from 22968
-                    'idealEdgeLength': 551,  # Increased by 50% from 367
+                    'nodeRepulsion': 51680,  # Increased by 50% from 34453
+                    'idealEdgeLength': 827,  # Increased by 50% from 551
                     'nodeDimensionsIncludeLabels': True
                 },
                 stylesheet=[
+                    # Default node style (dimmed)
                     {
                         'selector': 'node',
                         'style': {
                             'content': 'data(label)',
-                            'font-size': '17.5px',
-                            'text-opacity': 0.8,
+                            'font-size': '32px',  # Increased from 26.25px
+                            'text-opacity': 1,  # Changed from 0.5 to 1
                             'text-valign': 'center',
                             'text-halign': 'center',
-                            'background-color': '#808080',
+                            'background-color': '#cccccc',  # Light gray
                             'width': 'data(size)',
                             'height': 'data(size)',
                             'color': '#ffffff',
                             'text-outline-color': '#000000',
-                            'text-outline-width': 2
+                            'text-outline-width': 3  # Increased from 2
                         }
                     },
+                    # Highlighted nodes (along paths to core nodes)
+                    {
+                        'selector': 'node[node_to_core = "true"]',
+                        'style': {
+                            'background-color': 'data(color)',
+                        }
+                    },
+                    # Core nodes
                     {
                         'selector': 'node[is_core = "true"]',
                         'style': {
                             'background-color': '#00ff00',
-                            'shape': 'star'
+                            'shape': 'star',
                         }
                     },
+                    # Default edge style (dimmed)
                     {
                         'selector': 'edge',
                         'style': {
                             'width': 'data(normalized_weight)',
-                            'opacity': 0.6,
+                            'opacity': 0.2,  # Dimmed edges
                             'curve-style': 'bezier',
-                            'line-color': '#000000',
-                            'target-arrow-color': '#000000',
+                            'line-color': '#999999',  # Light gray
+                            'target-arrow-color': '#999999',
                             'target-arrow-shape': 'triangle',
                             'arrow-scale': 0.5
                         }
                     },
+                    # Highlighted edges (along paths to core nodes)
                     {
-                        'selector': 'edge[highlight = "true"]',
+                        'selector': 'edge[edge_to_core = "true"]',
                         'style': {
-                            'line-color': '#000000',
+                            'line-color': '#ff0000',
                             'width': 'data(normalized_weight)',
-                            'opacity': 0.8,
-                            'target-arrow-color': '#000000',
+                            'opacity': 1.0,
+                            'target-arrow-color': '#ff0000',
                             'target-arrow-shape': 'triangle',
-                            'arrow-scale': 0.5
+                            'arrow-scale': 0.7
                         }
                     },
+                    # Edge hover style
                     {
                         'selector': 'edge:hover',
                         'style': {
@@ -284,7 +309,7 @@ app.layout = html.Div([
                             'target-arrow-shape': 'triangle',
                             'arrow-scale': 0.5
                         }
-                    }
+                    },
                 ]
             )
         ], style={'width': '80%', 'display': 'inline-block', 'vertical-align': 'top'}),
@@ -303,8 +328,8 @@ def update_layout(layout):
     return {
         'name': layout,
         'animate': True,
-        'nodeRepulsion': 34453,  # Increased by 50% from 22968
-        'idealEdgeLength': 551,  # Increased by 50% from 367
+        'nodeRepulsion': 51680,  # Increased by 50% from 34453
+        'idealEdgeLength': 827,  # Increased by 50% from 551
         'nodeDimensionsIncludeLabels': True
     }
 
@@ -315,15 +340,20 @@ def update_layout(layout):
 def display_node_data(data):
     if not data:
         return "Click on a node to see its details"
-    return html.Div([
+    node_info = [
         html.H3(f"User: {data['label']}"),
         html.P(f"FID: {data['fid']}"),
         html.P(f"Display Name: {data['display_name']}"),
         html.P(f"Followers: {data['follower_count']}"),
         html.P(f"Following: {data['following_count']}"),
-        html.P(f"Centrality: {data['centrality']:.4f}"),
-        html.P(f"Betweenness: {data['betweenness']:.4f}")
-    ])
+        html.P(f"Connected Core Nodes: {data['connected_core_nodes']}")
+    ]
+    if data['is_core'] != 'true':
+        node_info.extend([
+            html.P(f"Centrality: {data['centrality']:.4f}"),
+            html.P(f"Betweenness: {data['betweenness']:.4f}")
+        ])
+    return html.Div(node_info)
 
 @app.callback(
     Output('edge-data', 'children'),
@@ -343,12 +373,53 @@ def display_edge_data(data):
 
 @app.callback(
     Output('cytoscape-graph', 'elements'),
-    Input('time-slider', 'value')
+    [Input('time-slider', 'value'),
+     Input('cytoscape-graph', 'tapNodeData')]
 )
-def update_graph(selected_timestamp):
+def update_graph(selected_timestamp, tapNodeData):
+    selected_node_id = tapNodeData['id'] if tapNodeData else None
+    elements, temp_G = get_elements_at_timestamp(filtered_G, selected_timestamp)
+
+    if selected_node_id:
+        highlighted_edges = set()
+        highlighted_nodes = set()
+        for core_node in core_nodes:
+            try:
+                path = nx.shortest_path(temp_G, source=selected_node_id, target=core_node)
+                highlighted_nodes.update(path)
+                path_edges = list(zip(path[:-1], path[1:]))
+                highlighted_edges.update(path_edges)
+            except nx.NetworkXNoPath:
+                pass
+        # Update elements
+        for element in elements:
+            data = element['data']
+            if 'source' in data and 'target' in data:
+                source = data['source']
+                target = data['target']
+                if (source, target) in highlighted_edges or (target, source) in highlighted_edges:
+                    data['edge_to_core'] = 'true'
+                else:
+                    data['edge_to_core'] = 'false'
+            else:
+                node_id = data['id']
+                if node_id in highlighted_nodes:
+                    data['node_to_core'] = 'true'
+                else:
+                    data['node_to_core'] = 'false'
+    else:
+        # No node selected
+        for element in elements:
+            data = element['data']
+            if 'edge_to_core' in data:
+                data['edge_to_core'] = 'false'
+            if 'node_to_core' in data:
+                data['node_to_core'] = 'false'
+
     if selected_timestamp == min_timestamp:
-        return [element for element in get_elements_at_timestamp(filtered_G, selected_timestamp) if element['data'].get('is_core') == 'true']
-    return get_elements_at_timestamp(filtered_G, selected_timestamp)
+        # Only show core nodes if at the initial timestamp
+        elements = [element for element in elements if element['data'].get('is_core') == 'true' or 'source' not in element['data']]
+    return elements
 
 if __name__ == '__main__':
     app.run_server(debug=True)
