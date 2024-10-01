@@ -101,18 +101,21 @@ class GraphBuilder:
 
     def create_edges_for_casts(self, G, fid, node_data):
         casts_data = node_data.get('casts', [])
-        casts_df = pd.DataFrame(casts_data)
-        print(casts_df.head())
-        edge_attr_columns = ['edge_type', 'timestamp']
-        G.add_edges_from(nx.from_pandas_edgelist(
-            casts_df,
-            source='source',
-            target='target',
-            edge_attr=edge_attr_columns,
-            create_using=nx.MultiDiGraph
-        ).edges(data=True))
+        if len(casts_data) > 0:
+            casts_df = pd.DataFrame(casts_data)
+            print(casts_df.head())
+            edge_attr_columns = ['edge_type', 'timestamp']
+            G.add_edges_from(nx.from_pandas_edgelist(
+                casts_df,
+                source='source',
+                target='target',
+                edge_attr=edge_attr_columns,
+                create_using=nx.MultiDiGraph
+            ).edges(data=True))
 
-        logging.info(f"Added {len(casts_df)} REPLIED edges for FID {fid}")
+            logging.info(f"Added {len(casts_df)} REPLIED edges for FID {fid}")
+        else:
+            pass
 
     def build_graph(self, fids):
         G = nx.MultiDiGraph()
@@ -153,6 +156,6 @@ class GraphBuilder:
 
 if __name__ == "__main__":
     gb = GraphBuilder()
-    fids = ['988', '746', '190000', '378']
+    fids = ['746', '190000', '1289']
     graph = gb.build_graph(fids)
     gb.save_graph_as_json(graph, fids)
