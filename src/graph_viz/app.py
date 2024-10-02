@@ -228,9 +228,9 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
 
 # Define the app layout
 app.layout = html.Div([
-    html.H1("Farcaster Network Visualization"),
+    html.H1("Farcaster Network Visualization", style={'color': 'white'}),
     html.Div([
-        html.Label('Enter User IDs (comma separated):'),
+        html.Label('Enter User IDs (comma separated):', style={'color': 'white'}),
         dcc.Input(
             id='user-ids-input',
             type='text',
@@ -354,8 +354,8 @@ app.layout = html.Div([
             ], style={'width': '80%', 'display': 'inline-block', 'vertical-align': 'top'}
         ),
         html.Div([
-            html.Div(id='node-data'),
-            html.Div(id='edge-data')
+            html.Div(id='node-data', style={'color': 'white'}),
+            html.Div(id='edge-data', style={'color': 'white'})
         ], style={'width': '20%', 'display': 'inline-block', 'vertical-align': 'top'})
     ]),
     # Store component to hold graph data
@@ -366,7 +366,7 @@ app.layout = html.Div([
         type="default",
         children=[html.Div(id="loading-output-graph")]
     )
-])
+], style={'background-color': 'black'})
 
 # Callback to build the graph and store it in dcc.Store
 @app.callback(
