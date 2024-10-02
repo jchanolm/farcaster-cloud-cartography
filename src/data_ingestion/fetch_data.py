@@ -1,20 +1,20 @@
 import os
-import time 
-import json 
+import time
+import json
 from dotenv import load_dotenv
-import requests as r 
+import requests as r
 from requests import RequestException
 
 load_dotenv()
 
-class DataFetcher: 
+class DataFetcher:
     def __init__(self, data_dir="data/raw", max_age_seconds=86400):
         """
         Initializes DataFetcher instance.
         - data_dir (str): Directory where data is stored
         - max_age_seconds (int): Maximum age of cached data in seconds (default: 24 hours)
         """
-        self.data_dir = data_dir 
+        self.data_dir = data_dir
         self.max_age_seconds = max_age_seconds
         self.NEYNAR_API_KEY = os.getenv('NEYNAR_API_KEY')
 
@@ -119,11 +119,11 @@ class DataFetcher:
         if 'core_node_metadata' in user_object and 'fid' in user_object['core_node_metadata']:
             unique_fids.add(user_object['core_node_metadata']['fid'])
         
-        # if 'follows' in user_object:
-        #     unique_fids.update(follow['target'] for follow in user_object['follows'] if 'target' in follow)
+        if 'follows' in user_object:
+            unique_fids.update(follow['target'] for follow in user_object['follows'] if 'target' in follow)
         
-        # if 'followers' in user_object:
-        #     unique_fids.update(follower['source'] for follower in user_object['followers'] if 'source' in follower)
+        if 'followers' in user_object:
+            unique_fids.update(follower['source'] for follower in user_object['followers'] if 'source' in follower)
         
         if 'likes' in user_object:
             unique_fids.update(like['target'] for like in user_object['likes'] if 'target' in like)
@@ -255,7 +255,7 @@ class DataFetcher:
                         'target_hash': target_cast.get('hash'),
                         'timestamp': timestamp,
                         'edge_type': 'LIKED'
-                     })
+                    })
         return extracted_likes
 
     def get_user_recasts(self, fid):
@@ -279,7 +279,7 @@ class DataFetcher:
                         'target_hash': target_cast.get('hash'),
                         'timestamp': timestamp,
                         'edge_type': 'RECASTED'
-                     })
+                    })
         return extracted_recasts
 
     def get_user_casts(self, fid):
@@ -307,57 +307,58 @@ class DataFetcher:
 
 
     def get_user_data(self, fid):
-        """Assembles all data for a single user."""
-        # follows = self.get_user_follows(fid)
-        # followers = self.get_user_followers(fid)
-        likes = self.get_user_likes(fid)
-        recasts = self.get_user_recasts(fid)
-        casts = self.get_user_casts(fid)
-        
-        user_object = {
-            'core_node_metadata': self.get_user_metadata(fid),
-            # 'follows': follows,
-            # 'followers': followers,
-            'likes': likes,
-            'recasts': recasts,
-            'casts': casts
-        }
-        
-        return user_object
+            """Assembles all data for a single user."""
+            likes = self.get_user_likes(fid)
+            recasts = self.get_user_recasts(fid)
+            casts = self.get_user_casts(fid)
+            followers = self.get_user_followers(fid)
+            following = self.get_user_follows(fid)
+            # followers = 
+            # following =
+
+            user_object = {
+                'core_node_metadata': self.get_user_metadata(fid),
+                'likes': likes,
+                'recasts': recasts,
+                'casts': casts,
+                'followers': followers,
+                'following': following
+            }
+
+            return user_object
 
     def get_all_users_data(self, fids):
-        """Fetches and stores data for multiple users."""
-        all_user_data = {}
-        for fid in fids:
-            print(f"Fetching data for FID: {fid}")
-            user_data = self.get_user_data(fid)
-            all_user_data[fid] = user_data
+            """Fetches and stores data for multiple users."""
+            all_user_data = {}
+            for fid in fids:
+                print(f"Fetching data for FID: {fid}")
+                user_data = self.get_user_data(fid)
+                all_user_data[fid] = user_data
 
-            filename = f'user_{fid}_data.json'
-            with open(os.path.join(self.data_dir, filename), 'w') as f:
-                json.dump(user_data, f)
+                # Optionally write to file if needed
+                filename = f'user_{fid}_data.json'
+                with open(os.path.join(self.data_dir, filename), 'w') as f:
+                    json.dump(user_data, f)
 
-        print("Finished fetching individual user data. Now collecting connection metadata...")
+            print("Finished fetching individual user data. Now collecting connection metadata...")
 
-        # Collect connection metadata after fetching all individual user data
-        for fid, user_data in all_user_data.items():
-            print(f"Collecting connection metadata for FID: {fid}")
-            connections_metadata = self.get_user_metadata_for_connections(user_data)
-            user_data['connections_metadata'] = connections_metadata
-            # Update the stored JSON file with the new data
-            filename = f'user_{fid}_data.json'
-            with open(os.path.join(self.data_dir, filename), 'w') as f:
-                json.dump(user_data, f)
+            # Collect connection metadata after fetching all individual user data
+            for fid, user_data in all_user_data.items():
+                print(f"Collecting connection metadata for FID: {fid}")
+                connections_metadata = self.get_user_metadata_for_connections(user_data)
+                user_data['connections_metadata'] = connections_metadata
+                # Update the stored JSON file with the new data if needed
+                filename = f'user_{fid}_data.json'
+                with open(os.path.join(self.data_dir, filename), 'w') as f:
+                    json.dump(user_data, f)
 
-        return all_user_data
-            
+            return all_user_data            
 
-if __name__ == "__main__":
-    fetcher = DataFetcher()
-    fetcher.get_all_users_data(['988', '378', '190000', '746'])
+# if __name__ == "__main__":
+    # fetcher = DataFetcher()
+    # fetcher.get_user_data(['988', '378', '190000', '746'])
     # user_data = fetcher.fetch_and_store_user_data([5, 1677])
     # follows = fetcher.get_user_follows([3])
     # followers = fetcher.get_user_followers([190000])
     # likes = fetcher.get_user_likes([190000])
     # recasts = fetcher.get_user_recasts([3])
-
