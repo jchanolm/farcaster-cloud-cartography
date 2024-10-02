@@ -35,69 +35,89 @@ class GraphBuilder:
 
     def create_edges_for_likes(self, G, fid, node_data):
         likes_data = node_data.get('likes', [])
-        likes_df = pd.DataFrame(likes_data)
-        likes_df['source'] = fid
-        likes_df = likes_df.rename(columns={
-            'target_fid': 'target'
-        })
-        likes_df['source'] = fid
-        likes_df['edge_type'] = 'LIKED'
-        edge_attr_columns = ['edge_type', 'timestamp']
-        G.add_edges_from(nx.from_pandas_edgelist(
-            likes_df,
-            source='source',
-            target='target',
-            edge_attr=edge_attr_columns,
-            create_using=nx.MultiDiGraph()
-        ).edges(data=True))
+        if len(likes_data) > 0:
+            likes_df = pd.DataFrame(likes_data)
+            likes_df['source'] = str(fid)
+            likes_df = likes_df.rename(columns={
+                'target_fid': 'target'
+            })
+            likes_df['edge_type'] = 'LIKED'
+            edge_attr_columns = ['edge_type', 'timestamp']
+            G.add_edges_from(nx.from_pandas_edgelist(
+                likes_df,
+                source='source',
+                target='target',
+                edge_attr=edge_attr_columns,
+                create_using=nx.MultiDiGraph()
+            ).edges(data=True))
 
-        logging.info(f"Added {len(likes_df)} LIKE edges for FID {fid}")
+            logging.info(f"Added {len(likes_df)} LIKE edges for FID {fid}")
     
 
 
     def create_edges_for_followers(self, G, fid, node_data):
         followers_data = node_data.get('followers', [])
-        followers_df = pd.DataFrame(followers_data)
-        edge_attr_columns = ['edge_type', 'timestamp']
-        G.add_edges_from(nx.from_pandas_edgelist(
-            followers_df, 
-            source='source',
-            target='target',
-            edge_attr=edge_attr_columns,
-            create_using=nx.MultiDiGraph()
-        ).edges(data=True))
+        if len(followers_data) > 0:
+            followers_df = pd.DataFrame(followers_data)
+            edge_attr_columns = ['edge_type', 'timestamp']
+            G.add_edges_from(nx.from_pandas_edgelist(
+                followers_df, 
+                source='source',
+                target='target',
+                edge_attr=edge_attr_columns,
+                create_using=nx.MultiDiGraph()
+            ).edges(data=True))
 
-        logging.info(f"Added {len(followers_df)} incoming FOLLOWS edges for FID {fid}")
+            logging.info(f"Added {len(followers_df)} incoming FOLLOWS edges for FID {fid}")
 
 
     def create_edges_for_following(self, G, fid, node_data):
         follows_data = node_data.get('follows', [])
-        follows_df = pd.DataFrame(follows_data)
-        edge_attr_columns = ['edge_type', 'timestamp']
-        G.add_edges_from(nx.from_pandas_edgelist(
-            follows_df, 
-            source='source',
-            target='target',
-            edge_attr=edge_attr_columns,
-            create_using=nx.MultiDiGraph()
-        ).edges(data=True))
+        if len(follows_data) > 0:
+            follows_df = pd.DataFrame(follows_data)
+            edge_attr_columns = ['edge_type', 'timestamp']
+            G.add_edges_from(nx.from_pandas_edgelist(
+                follows_df, 
+                source='source',
+                target='target',
+                edge_attr=edge_attr_columns,
+                create_using=nx.MultiDiGraph()
+            ).edges(data=True))
 
-        logging.info(f"Added {len(follows_df)} outgoing FOLLOWS edges for FID {fid}")
+            logging.info(f"Added {len(follows_df)} outgoing FOLLOWS edges for FID {fid}")
 
 
     def create_edges_for_recasts(self, G, fid, node_data):
         recasts_data = node_data.get('recasts', [])
-        recasts_df = pd.DataFrame(recasts_data)
-        edge_attr_columns = ['edge_type', 'timestamp', 'target_hash']
-        G.add_edges_from(nx.from_pandas_edgelist(
-            recasts_df,
-            source='source',
-            target='target',
-            edge_attr=edge_attr_columns,
-            create_using=nx.MultiDiGraph
-        ).edges(data=True))
+        if len(recasts_data) > 0:
+            recasts_df = pd.DataFrame(recasts_data)
+            edge_attr_columns = ['edge_type', 'timestamp', 'target_hash']
+            G.add_edges_from(nx.from_pandas_edgelist(
+                recasts_df,
+                source='source',
+                target='target',
+                edge_attr=edge_attr_columns,
+                create_using=nx.MultiDiGraph
+            ).edges(data=True))
 
-        logging.info(f"Added {len(recasts_df)} RECASTED edges for FID {fid}")
+            logging.info(f"Added {len(recasts_df)} RECASTED edges for FID {fid}")
+
+
+    def create_edges_for_casts(self, G, fid, node_data):
+        casts_data = node_data.get('casts', [])
+        if len(casts_data) > 0:
+            casts_df = pd.DataFrame(casts_data)
+            print(casts_df.head())
+            edge_attr_columns = ['edge_type', 'timestamp']
+            G.add_edges_from(nx.from_pandas_edgelist(
+                casts_df,
+                source='source',
+                target='target',
+                edge_attr=edge_attr_columns,
+                create_using=nx.MultiDiGraph
+            ).edges(data=True))
+
+            logging.info(f"Added {len(casts_df)} REPLIED edges for FID {fid}")
 
     def build_graph(self, fids):
         G = nx.MultiDiGraph()
@@ -117,9 +137,10 @@ class GraphBuilder:
         for fid in fids:
             node_data = self.load_data(fid)
             self.create_edges_for_likes(G, fid, node_data)
-            self.create_edges_for_followers(G, fid, node_data)
-            self.create_edges_for_following(G, fid, node_data)
+            # self.create_edges_for_followers(G, fid, node_data)
+            # self.create_edges_for_following(G, fid, node_data)
             self.create_edges_for_recasts(G, fid, node_data)
+            self.create_edges_for_casts(G, fid, node_data)
         logging.info(f"Graph has {G.number_of_nodes()} nodes")
         logging.info(f"Graph has {G.number_of_edges()} edges")
         return G            
@@ -137,6 +158,6 @@ class GraphBuilder:
 
 if __name__ == "__main__":
     gb = GraphBuilder()
-    fids = ['746', '190000']
+    fids = ['988', '378', '190000', '746']
     graph = gb.build_graph(fids)
     gb.save_graph_as_json(graph, fids)
