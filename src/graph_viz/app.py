@@ -271,7 +271,7 @@ app.layout = html.Div([
                 cyto.Cytoscape(
                     id='cytoscape-graph',
                     elements=[],
-                    style={'width': '100%', 'height': '800px'},
+                    style={'width': '100%', 'height': '800px', 'background-color': 'black'},
                     layout={
                         'name': 'cose-bilkent',
                         'animate': False,
