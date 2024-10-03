@@ -5,10 +5,9 @@ from datetime import datetime
 
 import networkx as nx
 import numpy as np
-from dash import Dash, html, dcc
-from dash.dependencies import Input, Output, State
-import dash_cytoscape as cyto
+from dash import Dash, html, dcc, Input, Output, State, no_update
 from dash.exceptions import PreventUpdate
+import dash_cytoscape as cyto
 
 from src.data_ingestion.fetch_data import DataFetcher
 from src.graph_processing.build_graph import GraphBuilder
@@ -220,7 +219,7 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
     # If it's the initial timestamp (min_timestamp), only show core nodes
     if timestamp <= min_timestamp:
         cyto_elements = [
-            element for element in cyto_elements 
+            element for element in cyto_elements
             if element['data'].get('is_core') == 'true'
         ]
 
@@ -228,9 +227,11 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
 
 # Define the app layout
 app.layout = html.Div([
-    html.H1("Farcaster Network Visualization", style={'color': 'white'}),
     html.Div([
-        html.Label('Enter User IDs (comma separated):', style={'color': 'white'}),
+        html.H1("Farcaster Network Visualization", style={'color': 'black', 'display': 'inline-block', 'margin-right': '20px'}),
+    ]),
+    html.Div([
+        html.Label('Enter User IDs (comma separated):', style={'color': 'black'}),
         dcc.Input(
             id='user-ids-input',
             type='text',
@@ -263,147 +264,131 @@ app.layout = html.Div([
                 step=None
             ),
         ]),
-        # Wrap Cytoscape with dcc.Loading to show a spinner during updates
-        dcc.Loading(
-            id="loading-output",
-            type="circle",
-            children=[
-                cyto.Cytoscape(
-                    id='cytoscape-graph',
-                    elements=[],
-                    style={'width': '100%', 'height': '800px', 'background-color': 'black'},
-                    layout={
-                        'name': 'cose-bilkent',
-                        'animate': False,
-                        'nodeRepulsion': 51680,
-                        'idealEdgeLength': 827,
-                        'nodeDimensionsIncludeLabels': True
-                    },                    
-                    stylesheet=[
-                        # Default node style (dimmed)
-                        {
-                            'selector': 'node',
-                            'style': {
-                                'content': 'data(label)',
-                                'font-size': '32px',  # Increased from 26.25px
-                                'text-opacity': 1,  # Changed from 0.5 to 1
-                                'text-valign': 'center',
-                                'text-halign': 'center',
-                                'background-color': '#cccccc',  # Light gray
-                                'width': 'data(size)',
-                                'height': 'data(size)',
-                                'color': '#ffffff',
-                                'text-outline-color': '#000000',
-                                'text-outline-width': 3  # Increased from 2
-                            }
-                        },
-                        # Highlighted nodes (along paths to core nodes)
-                        {
-                            'selector': 'node[node_to_core = "true"]',
-                            'style': {
-                                'background-color': 'data(color)',
-                            }
-                        },
-                        # Core nodes
-                        {
-                            'selector': 'node[is_core = "true"]',
-                            'style': {
-                                'background-color': '#00ff00',
-                                'shape': 'star',
-                            }
-                        },
-                        # Default edge style (dimmed)
-                        {
-                            'selector': 'edge',
-                            'style': {
-                                'width': 'data(normalized_weight)',
-                                'opacity': 0.2,  # Dimmed edges
-                                'curve-style': 'bezier',
-                                'line-color': '#999999',  # Light gray
-                                'target-arrow-color': '#999999',
-                                'target-arrow-shape': 'triangle',
-                                'arrow-scale': 0.5
-                            }
-                        },
-                        # Highlighted edges (along paths to core nodes)
-                        {
-                            'selector': 'edge[edge_to_core = "true"]',
-                            'style': {
-                                'line-color': '#ff0000',
-                                'width': 'data(normalized_weight)',
-                                'opacity': 1.0,
-                                'target-arrow-color': '#ff0000',
-                                'target-arrow-shape': 'triangle',
-                                'arrow-scale': 0.7
-                            }
-                        },
-                        # Edge hover style
-                        {
-                            'selector': 'edge:hover',
-                            'style': {
-                                'line-color': '#000000',
-                                'transition-property': 'line-color',
-                                'transition-duration': '0.5s',
-                                'target-arrow-color': '#000000',
-                                'target-arrow-shape': 'triangle',
-                                'arrow-scale': 0.5
-                            }
-                        },
-                    ]
-                )
-            ], style={'width': '80%', 'display': 'inline-block', 'vertical-align': 'top'}
+        # Cytoscape component
+        cyto.Cytoscape(
+            id='cytoscape-graph',
+            elements=[],
+            style={'width': '100%', 'height': '800px', 'background-color': 'white'},
+            layout={
+                'name': 'cose-bilkent',
+                'animate': False,
+                'nodeRepulsion': 51680,
+                'idealEdgeLength': 827,
+                'nodeDimensionsIncludeLabels': True
+            },
+            stylesheet=[
+                # Default node style (dimmed)
+                {
+                    'selector': 'node',
+                    'style': {
+                        'content': 'data(label)',
+                        'font-size': '32px',
+                        'text-opacity': 1,
+                        'text-valign': 'center',
+                        'text-halign': 'center',
+                        'background-color': '#cccccc',
+                        'width': 'data(size)',
+                        'height': 'data(size)',
+                        'color': '#000000',
+                        'text-outline-color': '#ffffff',
+                        'text-outline-width': 3
+                    }
+                },
+                # Highlighted nodes (along paths to core nodes)
+                {
+                    'selector': 'node[node_to_core = "true"]',
+                    'style': {
+                        'background-color': 'data(color)',
+                    }
+                },
+                # Core nodes
+                {
+                    'selector': 'node[is_core = "true"]',
+                    'style': {
+                        'background-color': '#00ff00',
+                        'shape': 'star',
+                    }
+                },
+                # Default edge style (dimmed)
+                {
+                    'selector': 'edge',
+                    'style': {
+                        'width': 'data(normalized_weight)',
+                        'opacity': 0.2,
+                        'curve-style': 'bezier',
+                        'line-color': '#999999',
+                        'target-arrow-color': '#999999',
+                        'target-arrow-shape': 'triangle',
+                        'arrow-scale': 0.5
+                    }
+                },
+                # Highlighted edges (along paths to core nodes)
+                {
+                    'selector': 'edge[edge_to_core = "true"]',
+                    'style': {
+                        'line-color': '#ff0000',
+                        'width': 'data(normalized_weight)',
+                        'opacity': 1.0,
+                        'target-arrow-color': '#ff0000',
+                        'target-arrow-shape': 'triangle',
+                        'arrow-scale': 0.7
+                    }
+                },
+                # Edge hover style
+                {
+                    'selector': 'edge:hover',
+                    'style': {
+                        'line-color': '#000000',
+                        'transition-property': 'line-color',
+                        'transition-duration': '0.5s',
+                        'target-arrow-color': '#000000',
+                        'target-arrow-shape': 'triangle',
+                        'arrow-scale': 0.5
+                    }
+                },
+            ]
         ),
         html.Div([
-            html.Div(id='node-data', style={'color': 'white'}),
-            html.Div(id='edge-data', style={'color': 'white'})
+            html.Div(id='node-data', style={'color': 'black'}),
+            html.Div(id='edge-data', style={'color': 'black'})
         ], style={'width': '20%', 'display': 'inline-block', 'vertical-align': 'top'})
     ]),
+    # Add a dcc.Loading component that wraps an html.Div which will be updated during the build_graph callback
+    dcc.Loading(
+        id='loading',
+        type='circle',
+        fullscreen=True,
+        children=html.Div(id='loading-output')
+    ),
     # Store component to hold graph data
     dcc.Store(id='graph-store'),
-    # Add a loading indicator for the graph building process
-    dcc.Loading(
-        id="loading-graph",
-        type="default",
-        children=[html.Div(id="loading-output-graph")]
-    )
-], style={'background-color': 'black'})
+])
 
-# Callback to build the graph and store it in dcc.Store
+# Callback to build the graph and store data
 @app.callback(
     [Output('graph-store', 'data'),
-     Output("loading-output-graph", "children")],
-    [Input('build-graph-button', 'n_clicks')],
-    [State('user-ids-input', 'value')],
+     Output('loading-output', 'children')],
+    Input('build-graph-button', 'n_clicks'),
+    State('user-ids-input', 'value'),
     prevent_initial_call=True
 )
 def build_graph(n_clicks, user_ids_input):
     if n_clicks is None or not user_ids_input:
-        print("Build Graph button not clicked or user IDs not provided.")
-        raise PreventUpdate
-
-    print("Build Graph callback triggered.")
+        return no_update, no_update
 
     try:
-        # Parse user IDs from input
         core_nodes = [uid.strip() for uid in user_ids_input.split(',') if uid.strip()]
-        print(f"Core nodes: {core_nodes}")
 
         # Fetch data using user-provided IDs
         fetcher = DataFetcher()
-        print("Fetching user data...")
         all_user_data = fetcher.get_all_users_data(core_nodes)
-        print("User data fetched.")
 
         # Build graph from fetched data
         gb = GraphBuilder()
-        print("Building graph...")
         G = gb.build_graph_from_data(all_user_data)
-        print("Graph built.")
 
         # Filter the graph based on core nodes
-        print("Filtering graph...")
         filtered_G = filter_graph(G, core_nodes)
-        print("Graph filtered.")
 
         # Get all timestamps and sort them
         all_timestamps = sorted([edge[2]['timestamp'] for edge in filtered_G.edges(data=True)])
@@ -414,44 +399,33 @@ def build_graph(n_clicks, user_ids_input):
         max_timestamp = max_timestamp - jan_2020_timestamp
 
         # Convert the graph to a JSON serializable format
-        print("Serializing graph data...")
         graph_data = nx.readwrite.json_graph.node_link_data(filtered_G)
         graph_data['min_timestamp'] = min_timestamp
         graph_data['max_timestamp'] = max_timestamp
-        print("Graph data serialized.")
 
-        return graph_data, ""
+        # Update the loading-output div (can be empty string)
+        return graph_data, ''
 
     except Exception as e:
-        print(f"Error in build_graph callback: {e}")
-        return dash.no_update, f"Error: {str(e)}"
+        # In case of error, handle the exception
+        return no_update, ''
 
 # Callback to update Cytoscape elements based on graph data, slider, and node taps
 @app.callback(
     Output('cytoscape-graph', 'elements'),
-    [
-        Input('time-slider', 'value'),
-        Input('cytoscape-graph', 'tapNodeData'),
-        Input('graph-store', 'data')
-    ],
-    [
-        State('user-ids-input', 'value'),
-    ]
+    [Input('time-slider', 'value'),
+     Input('cytoscape-graph', 'tapNodeData'),
+     Input('graph-store', 'data')],
+    State('user-ids-input', 'value')
 )
 def update_elements(selected_timestamp, tapNodeData, graph_data, user_ids_input):
     if not graph_data:
-        print("No graph data available.")
         return []
-
-    print("Update Elements callback triggered.")
-    print(f"Selected timestamp: {selected_timestamp}")
 
     # Reconstruct the graph
     G = nx.readwrite.json_graph.node_link_graph(graph_data, multigraph=True)
-    print("Graph reconstructed from graph-store.")
 
     core_nodes = [uid.strip() for uid in user_ids_input.split(',') if uid.strip()]
-    print(f"Core nodes in update_elements: {core_nodes}")
 
     min_timestamp = graph_data['min_timestamp']
     max_timestamp = graph_data['max_timestamp']
@@ -470,12 +444,11 @@ def update_elements(selected_timestamp, tapNodeData, graph_data, user_ids_input)
     Input('layout-dropdown', 'value')
 )
 def update_layout(layout):
-    print(f"Layout changed to: {layout}")
     return {
         'name': layout,
         'animate': True,
-        'nodeRepulsion': 51680,  # Increased by 50% from 34453
-        'idealEdgeLength': 827,  # Increased by 50% from 551
+        'nodeRepulsion': 51680,
+        'idealEdgeLength': 827,
         'nodeDimensionsIncludeLabels': True
     }
 
