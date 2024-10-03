@@ -5,9 +5,11 @@ from datetime import datetime
 
 import networkx as nx
 import numpy as np
+import dash
 from dash import Dash, html, dcc, Input, Output, State, no_update
 from dash.exceptions import PreventUpdate
 import dash_cytoscape as cyto
+import dash_bootstrap_components as dbc  # New import for Bootstrap Components
 
 from src.data_ingestion.fetch_data import DataFetcher
 from src.graph_processing.build_graph import GraphBuilder
@@ -15,8 +17,8 @@ from src.graph_processing.build_graph import GraphBuilder
 # Load extra layouts for Cytoscape
 cyto.load_extra_layouts()
 
-# Initialize the Dash app
-app = Dash(__name__)
+# Initialize the Dash app with Bootstrap stylesheet
+app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 # Define utility functions
 def calculate_connection_strength(G, core_nodes):
@@ -33,13 +35,11 @@ def calculate_connection_strength(G, core_nodes):
             connection_strength[node] = min(strengths) if strengths else 0
     return connection_strength
 
-def filter_graph(G, core_nodes, top_n=50):
+def filter_graph(G, core_nodes, top_n=25):
     connection_strength = calculate_connection_strength(G, core_nodes)
     top_nodes = sorted(connection_strength, key=connection_strength.get, reverse=True)[:top_n]
     filtered_nodes = set(top_nodes + core_nodes)
     return G.subgraph(filtered_nodes).copy()
-
-jan_2020_timestamp = 1577836800  # Unix timestamp for Jan 1, 2020 00:00:00 UTC
 
 def normalize_value(value, min_val, max_val, new_min, new_max):
     if max_val == min_val:
@@ -53,7 +53,7 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
     edge_dict = {}
     edges_up_to_timestamp = []
     for edge in G.edges(data=True):
-        if edge[2]['timestamp'] - jan_2020_timestamp <= timestamp:
+        if edge[2]['timestamp'] <= timestamp:
             source = str(edge[0])
             target = str(edge[1])
             active_nodes.add(source)
@@ -69,12 +69,17 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
                             'target': target,
                             'weight': 1,
                             'edge_types': Counter([edge_type]),
-                            'edge_to_core': 'false'  # Default value
+                            'edge_to_core': 'false',  # Default value
+                            'interactions': {
+                                source: Counter([edge_type]),
+                                target: Counter()
+                            }
                         }
                     }
                 else:
                     edge_dict[key]['data']['weight'] += 1
                     edge_dict[key]['data']['edge_types'][edge_type] += 1
+                    edge_dict[key]['data']['interactions'][source][edge_type] += 1
 
     # Normalize edge weights and increase thickness for relationships with lots of interactions
     if edge_dict:
@@ -110,12 +115,8 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
     all_timestamps = sorted([edge[2]['timestamp'] for edge in G.edges(data=True)])
     min_timestamp, max_timestamp = min(all_timestamps), max(all_timestamps)
 
-    # Adjust timestamps to be indexed from Jan 2020
-    min_timestamp = min_timestamp - jan_2020_timestamp
-    max_timestamp = max_timestamp - jan_2020_timestamp
-
     # Determine N based on timestamp
-    N = min(int(normalize_value(timestamp, min_timestamp, max_timestamp, 1, 5)), 5)
+    N = min(int(normalize_value(timestamp, min_timestamp, max_timestamp, 1, 10)), 10)
     top_N_nodes = sorted_nodes[:N]
 
     # Mark edges connected to top N non-core nodes
@@ -149,7 +150,7 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
             node_size = 112.5  # Base size for core nodes
         else:
             base_size = 45  # Base size for non-core nodes
-            size_multiplier = 1 + (connected_core_nodes - 1) * 0.5  # Linear increase
+            size_multiplier = 1 + (connected_core_nodes - 1) * 0.25  # Linear increase
             node_size = base_size * size_multiplier
 
         # Color nodes
@@ -227,18 +228,40 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
 
 # Define the app layout
 app.layout = html.Div([
+    # Header Section
     html.Div([
-        html.H1("Farcaster Network Visualization", style={'color': 'black', 'display': 'inline-block', 'margin-right': '20px'}),
+        html.H1(
+            "Farcaster Network Visualization",
+            style={
+                'color': 'black',
+                'display': 'inline-block',
+                'margin-right': '20px'
+            }
+        ),
     ]),
+    
+    # Input and Controls Section
     html.Div([
-        html.Label('Enter User IDs (comma separated):', style={'color': 'black'}),
+        # User IDs Input
+        html.Label(
+            'Enter User IDs (comma separated):',
+            style={'color': 'black'}
+        ),
         dcc.Input(
             id='user-ids-input',
             type='text',
             placeholder='Enter User IDs (comma-separated)',
             style={'width': '50%'}
         ),
-        html.Button('Build Graph', id='build-graph-button', n_clicks=0),
+        
+        # Build Graph Button
+        html.Button(
+            'Build Graph',
+            id='build-graph-button',
+            n_clicks=0
+        ),
+        
+        # Layout Dropdown and Time Slider
         html.Div([
             dcc.Dropdown(
                 id='layout-dropdown',
@@ -264,7 +287,8 @@ app.layout = html.Div([
                 step=None
             ),
         ]),
-        # Cytoscape component
+        
+        # Cytoscape Graph Component
         cyto.Cytoscape(
             id='cytoscape-graph',
             elements=[],
@@ -348,22 +372,55 @@ app.layout = html.Div([
                 },
             ]
         ),
+        
+        # Loading Overlay with Text
         html.Div([
-            html.Div(id='node-data', style={'color': 'black'}),
-            html.Div(id='edge-data', style={'color': 'black'})
-        ], style={'width': '20%', 'display': 'inline-block', 'vertical-align': 'top'})
-    ]),
-    # Add a dcc.Loading component that wraps an html.Div which will be updated during the build_graph callback
-    dcc.Loading(
-        id='loading',
-        type='circle',
-        fullscreen=True,
-        children=html.Div(id='loading-output')
-    ),
-    # Store component to hold graph data
-    dcc.Store(id='graph-store'),
+            dcc.Loading(
+                id='loading',
+                type='circle',
+                fullscreen=True,
+                children=html.Div([
+                    # Text Above the Loading Spinner
+                    html.Div(
+                        "Fetching data from Farcaster...",
+                        style={
+                            'position': 'absolute',
+                            'top': '50%',
+                            'left': '50%',
+                            'transform': 'translate(-50%, -60%)',
+                            'fontSize': '18px',
+                            'color': 'black'
+                        }
+                    ),
+                    # Loading Output Placeholder
+                    html.Div(id='loading-output')
+                ], style={'position': 'relative', 'height': '100%'})
+            ),
+        ]),
+        
+        # Store Component to Hold Graph Data
+        dcc.Store(id='graph-store'),
+        
+        # Modal for Node and Edge Metadata
+        dbc.Modal(
+            [
+                dbc.ModalHeader(dbc.ModalTitle("Metadata")),
+                dbc.ModalBody([
+                    html.Div(id='modal-body-content')
+                ]),
+                dbc.ModalFooter(
+                    dbc.Button("Close", id="close-modal", className="ms-auto", n_clicks=0)
+                ),
+            ],
+            id="metadata-modal",
+            is_open=False,
+            size="lg",
+            scrollable=True,
+            backdrop="static",
+            centered=True,
+        ),
+    ])
 ])
-
 # Callback to build the graph and store data
 @app.callback(
     [Output('graph-store', 'data'),
@@ -393,10 +450,6 @@ def build_graph(n_clicks, user_ids_input):
         # Get all timestamps and sort them
         all_timestamps = sorted([edge[2]['timestamp'] for edge in filtered_G.edges(data=True)])
         min_timestamp, max_timestamp = min(all_timestamps), max(all_timestamps)
-
-        # Adjust timestamps to be indexed from Jan 2020
-        min_timestamp = min_timestamp - jan_2020_timestamp
-        max_timestamp = max_timestamp - jan_2020_timestamp
 
         # Convert the graph to a JSON serializable format
         graph_data = nx.readwrite.json_graph.node_link_data(filtered_G)
@@ -452,45 +505,63 @@ def update_layout(layout):
         'nodeDimensionsIncludeLabels': True
     }
 
-# Callback to display node data
+# Callback to display node or edge data in modal
 @app.callback(
-    Output('node-data', 'children'),
-    Input('cytoscape-graph', 'tapNodeData')
+    [Output('metadata-modal', 'is_open'),
+     Output('modal-body-content', 'children')],
+    [Input('cytoscape-graph', 'tapNodeData'),
+     Input('cytoscape-graph', 'tapEdgeData'),
+     Input('close-modal', 'n_clicks')],
+    [State('metadata-modal', 'is_open'),
+     State('graph-store', 'data')]
 )
-def display_node_data(data):
-    if not data:
-        return "Click on a node to see its details"
-    node_info = [
-        html.H3(f"User: {data['label']}"),
-        html.P(f"FID: {data['fid']}"),
-        html.P(f"Display Name: {data['display_name']}"),
-        html.P(f"Followers: {data['follower_count']}"),
-        html.P(f"Following: {data['following_count']}"),
-        html.P(f"Connected Core Nodes: {data['connected_core_nodes']}")
-    ]
-    if data['is_core'] != 'true':
-        node_info.extend([
-            html.P(f"Centrality: {data['centrality']:.4f}"),
-            html.P(f"Betweenness: {data['betweenness']:.4f}")
-        ])
-    return html.Div(node_info)
+def display_metadata(node_data, edge_data, close_clicks, is_open, graph_data):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return no_update, no_update
+    
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
-# Callback to display edge data
-@app.callback(
-    Output('edge-data', 'children'),
-    Input('cytoscape-graph', 'tapEdgeData')
-)
-def display_edge_data(data):
-    if not data:
-        return "Click on an edge to see its details"
-    edge_types = data.get('edge_types', {})
-    return html.Div([
-        html.H3(f"Edge: {data['source']} → {data['target']}"),
-        html.P(f"Total Weight: {data['weight']}"),
-        html.P(f"Normalized Weight: {data['normalized_weight']:.2f}"),
-        html.H4("Edge Type Counts:"),
-        html.Ul([html.Li(f"{edge_type}: {count}") for edge_type, count in edge_types.items()])
-    ])
+    if trigger_id == 'close-modal':
+        return False, no_update
+
+    if node_data:
+        node_info = [
+            html.H3(f"User: {node_data['label']}"),
+            html.P(f"FID: {node_data['fid']}"),
+            html.P(f"Display Name: {node_data['display_name']}"),
+            html.P(f"Followers: {node_data['follower_count']}"),
+            html.P(f"Following: {node_data['following_count']}"),
+            html.P(f"Connected Core Nodes: {node_data['connected_core_nodes']}")
+        ]
+        if node_data['is_core'] != 'true':
+            node_info.extend([
+                html.P(f"Centrality: {node_data['centrality']:.4f}"),
+                html.P(f"Betweenness: {node_data['betweenness']:.4f}")
+            ])
+        return True, html.Div(node_info)
+
+    elif edge_data:
+        source = edge_data['source']
+        target = edge_data['target']
+        
+        edge_info = [
+            html.H3(f"Edge: {source} ↔ {target}"),
+            html.P(f"Total Interactions: {edge_data['weight']}")
+        ]
+
+        for user in [source, target]:
+            interactions = edge_data['interactions'][user]
+            total_interactions = sum(interactions.values())
+            edge_info.extend([
+                html.H4(f"{user}"),
+                html.P(f"{total_interactions} interactions"),
+                html.Ul([html.Li(f"{edge_type}: {count}") for edge_type, count in interactions.items()])
+            ])
+
+        return True, html.Div(edge_info)
+
+    return no_update, no_update
 
 # Run the Dash app
 if __name__ == '__main__':
