@@ -5,10 +5,11 @@ from datetime import datetime
 
 import networkx as nx
 import numpy as np
-from dash import Dash, html, dcc
-from dash.dependencies import Input, Output, State
-import dash_cytoscape as cyto
+import dash
+from dash import Dash, html, dcc, Input, Output, State, no_update
 from dash.exceptions import PreventUpdate
+import dash_cytoscape as cyto
+import dash_bootstrap_components as dbc  # New import for Bootstrap Components
 
 from src.data_ingestion.fetch_data import DataFetcher
 from src.graph_processing.build_graph import GraphBuilder
@@ -16,8 +17,8 @@ from src.graph_processing.build_graph import GraphBuilder
 # Load extra layouts for Cytoscape
 cyto.load_extra_layouts()
 
-# Initialize the Dash app
-app = Dash(__name__)
+# Initialize the Dash app with Bootstrap stylesheet
+app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 # Define utility functions
 def calculate_connection_strength(G, core_nodes):
@@ -34,13 +35,11 @@ def calculate_connection_strength(G, core_nodes):
             connection_strength[node] = min(strengths) if strengths else 0
     return connection_strength
 
-def filter_graph(G, core_nodes, top_n=50):
+def filter_graph(G, core_nodes, top_n=25):
     connection_strength = calculate_connection_strength(G, core_nodes)
     top_nodes = sorted(connection_strength, key=connection_strength.get, reverse=True)[:top_n]
     filtered_nodes = set(top_nodes + core_nodes)
     return G.subgraph(filtered_nodes).copy()
-
-jan_2020_timestamp = 1577836800  # Unix timestamp for Jan 1, 2020 00:00:00 UTC
 
 def normalize_value(value, min_val, max_val, new_min, new_max):
     if max_val == min_val:
@@ -54,7 +53,7 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
     edge_dict = {}
     edges_up_to_timestamp = []
     for edge in G.edges(data=True):
-        if edge[2]['timestamp'] - jan_2020_timestamp <= timestamp:
+        if edge[2]['timestamp'] <= timestamp:
             source = str(edge[0])
             target = str(edge[1])
             active_nodes.add(source)
@@ -70,12 +69,17 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
                             'target': target,
                             'weight': 1,
                             'edge_types': Counter([edge_type]),
-                            'edge_to_core': 'false'  # Default value
+                            'edge_to_core': 'false',  # Default value
+                            'interactions': {
+                                source: Counter([edge_type]),
+                                target: Counter()
+                            }
                         }
                     }
                 else:
                     edge_dict[key]['data']['weight'] += 1
                     edge_dict[key]['data']['edge_types'][edge_type] += 1
+                    edge_dict[key]['data']['interactions'][source][edge_type] += 1
 
     # Normalize edge weights and increase thickness for relationships with lots of interactions
     if edge_dict:
@@ -111,12 +115,8 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
     all_timestamps = sorted([edge[2]['timestamp'] for edge in G.edges(data=True)])
     min_timestamp, max_timestamp = min(all_timestamps), max(all_timestamps)
 
-    # Adjust timestamps to be indexed from Jan 2020
-    min_timestamp = min_timestamp - jan_2020_timestamp
-    max_timestamp = max_timestamp - jan_2020_timestamp
-
     # Determine N based on timestamp
-    N = min(int(normalize_value(timestamp, min_timestamp, max_timestamp, 1, 5)), 5)
+    N = min(int(normalize_value(timestamp, min_timestamp, max_timestamp, 1, 10)), 10)
     top_N_nodes = sorted_nodes[:N]
 
     # Mark edges connected to top N non-core nodes
@@ -150,7 +150,7 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
             node_size = 112.5  # Base size for core nodes
         else:
             base_size = 45  # Base size for non-core nodes
-            size_multiplier = 1 + (connected_core_nodes - 1) * 0.5  # Linear increase
+            size_multiplier = 1 + (connected_core_nodes - 1) * 0.25  # Linear increase
             node_size = base_size * size_multiplier
 
         # Color nodes
@@ -220,7 +220,7 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
     # If it's the initial timestamp (min_timestamp), only show core nodes
     if timestamp <= min_timestamp:
         cyto_elements = [
-            element for element in cyto_elements 
+            element for element in cyto_elements
             if element['data'].get('is_core') == 'true'
         ]
 
@@ -228,16 +228,40 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
 
 # Define the app layout
 app.layout = html.Div([
-    html.H1("Farcaster Network Visualization", style={'color': 'white'}),
+    # Header Section
     html.Div([
-        html.Label('Enter User IDs (comma separated):', style={'color': 'white'}),
+        html.H1(
+            "Farcaster Network Visualization",
+            style={
+                'color': 'black',
+                'display': 'inline-block',
+                'margin-right': '20px'
+            }
+        ),
+    ]),
+    
+    # Input and Controls Section
+    html.Div([
+        # User IDs Input
+        html.Label(
+            'Enter User IDs (comma separated):',
+            style={'color': 'black'}
+        ),
         dcc.Input(
             id='user-ids-input',
             type='text',
             placeholder='Enter User IDs (comma-separated)',
             style={'width': '50%'}
         ),
-        html.Button('Build Graph', id='build-graph-button', n_clicks=0),
+        
+        # Build Graph Button
+        html.Button(
+            'Build Graph',
+            id='build-graph-button',
+            n_clicks=0
+        ),
+        
+        # Layout Dropdown and Time Slider
         html.Div([
             dcc.Dropdown(
                 id='layout-dropdown',
@@ -263,195 +287,198 @@ app.layout = html.Div([
                 step=None
             ),
         ]),
-        # Wrap Cytoscape with dcc.Loading to show a spinner during updates
-        dcc.Loading(
-            id="loading-output",
-            type="circle",
-            children=[
-                cyto.Cytoscape(
-                    id='cytoscape-graph',
-                    elements=[],
-                    style={'width': '100%', 'height': '800px', 'background-color': 'black'},
-                    layout={
-                        'name': 'cose-bilkent',
-                        'animate': False,
-                        'nodeRepulsion': 51680,
-                        'idealEdgeLength': 827,
-                        'nodeDimensionsIncludeLabels': True
-                    },                    
-                    stylesheet=[
-                        # Default node style (dimmed)
-                        {
-                            'selector': 'node',
-                            'style': {
-                                'content': 'data(label)',
-                                'font-size': '32px',  # Increased from 26.25px
-                                'text-opacity': 1,  # Changed from 0.5 to 1
-                                'text-valign': 'center',
-                                'text-halign': 'center',
-                                'background-color': '#cccccc',  # Light gray
-                                'width': 'data(size)',
-                                'height': 'data(size)',
-                                'color': '#ffffff',
-                                'text-outline-color': '#000000',
-                                'text-outline-width': 3  # Increased from 2
-                            }
-                        },
-                        # Highlighted nodes (along paths to core nodes)
-                        {
-                            'selector': 'node[node_to_core = "true"]',
-                            'style': {
-                                'background-color': 'data(color)',
-                            }
-                        },
-                        # Core nodes
-                        {
-                            'selector': 'node[is_core = "true"]',
-                            'style': {
-                                'background-color': '#00ff00',
-                                'shape': 'star',
-                            }
-                        },
-                        # Default edge style (dimmed)
-                        {
-                            'selector': 'edge',
-                            'style': {
-                                'width': 'data(normalized_weight)',
-                                'opacity': 0.2,  # Dimmed edges
-                                'curve-style': 'bezier',
-                                'line-color': '#999999',  # Light gray
-                                'target-arrow-color': '#999999',
-                                'target-arrow-shape': 'triangle',
-                                'arrow-scale': 0.5
-                            }
-                        },
-                        # Highlighted edges (along paths to core nodes)
-                        {
-                            'selector': 'edge[edge_to_core = "true"]',
-                            'style': {
-                                'line-color': '#ff0000',
-                                'width': 'data(normalized_weight)',
-                                'opacity': 1.0,
-                                'target-arrow-color': '#ff0000',
-                                'target-arrow-shape': 'triangle',
-                                'arrow-scale': 0.7
-                            }
-                        },
-                        # Edge hover style
-                        {
-                            'selector': 'edge:hover',
-                            'style': {
-                                'line-color': '#000000',
-                                'transition-property': 'line-color',
-                                'transition-duration': '0.5s',
-                                'target-arrow-color': '#000000',
-                                'target-arrow-shape': 'triangle',
-                                'arrow-scale': 0.5
-                            }
-                        },
-                    ]
-                )
-            ], style={'width': '80%', 'display': 'inline-block', 'vertical-align': 'top'}
+        
+        # Cytoscape Graph Component
+        cyto.Cytoscape(
+            id='cytoscape-graph',
+            elements=[],
+            style={'width': '100%', 'height': '800px', 'background-color': 'white'},
+            layout={
+                'name': 'cose-bilkent',
+                'animate': False,
+                'nodeRepulsion': 51680,
+                'idealEdgeLength': 827,
+                'nodeDimensionsIncludeLabels': True
+            },
+            stylesheet=[
+                # Default node style (dimmed)
+                {
+                    'selector': 'node',
+                    'style': {
+                        'content': 'data(label)',
+                        'font-size': '32px',
+                        'text-opacity': 1,
+                        'text-valign': 'center',
+                        'text-halign': 'center',
+                        'background-color': '#cccccc',
+                        'width': 'data(size)',
+                        'height': 'data(size)',
+                        'color': '#000000',
+                        'text-outline-color': '#ffffff',
+                        'text-outline-width': 3
+                    }
+                },
+                # Highlighted nodes (along paths to core nodes)
+                {
+                    'selector': 'node[node_to_core = "true"]',
+                    'style': {
+                        'background-color': 'data(color)',
+                    }
+                },
+                # Core nodes
+                {
+                    'selector': 'node[is_core = "true"]',
+                    'style': {
+                        'background-color': '#00ff00',
+                        'shape': 'star',
+                    }
+                },
+                # Default edge style (dimmed)
+                {
+                    'selector': 'edge',
+                    'style': {
+                        'width': 'data(normalized_weight)',
+                        'opacity': 0.2,
+                        'curve-style': 'bezier',
+                        'line-color': '#999999',
+                        'target-arrow-color': '#999999',
+                        'target-arrow-shape': 'triangle',
+                        'arrow-scale': 0.5
+                    }
+                },
+                # Highlighted edges (along paths to core nodes)
+                {
+                    'selector': 'edge[edge_to_core = "true"]',
+                    'style': {
+                        'line-color': '#ff0000',
+                        'width': 'data(normalized_weight)',
+                        'opacity': 1.0,
+                        'target-arrow-color': '#ff0000',
+                        'target-arrow-shape': 'triangle',
+                        'arrow-scale': 0.7
+                    }
+                },
+                # Edge hover style
+                {
+                    'selector': 'edge:hover',
+                    'style': {
+                        'line-color': '#000000',
+                        'transition-property': 'line-color',
+                        'transition-duration': '0.5s',
+                        'target-arrow-color': '#000000',
+                        'target-arrow-shape': 'triangle',
+                        'arrow-scale': 0.5
+                    }
+                },
+            ]
         ),
+        
+        # Loading Overlay with Text
         html.Div([
-            html.Div(id='node-data', style={'color': 'white'}),
-            html.Div(id='edge-data', style={'color': 'white'})
-        ], style={'width': '20%', 'display': 'inline-block', 'vertical-align': 'top'})
-    ]),
-    # Store component to hold graph data
-    dcc.Store(id='graph-store'),
-    # Add a loading indicator for the graph building process
-    dcc.Loading(
-        id="loading-graph",
-        type="default",
-        children=[html.Div(id="loading-output-graph")]
-    )
-], style={'background-color': 'black'})
-
-# Callback to build the graph and store it in dcc.Store
+            dcc.Loading(
+                id='loading',
+                type='circle',
+                fullscreen=True,
+                children=html.Div([
+                    # Text Above the Loading Spinner
+                    html.Div(
+                        "Fetching data from Farcaster...",
+                        style={
+                            'position': 'absolute',
+                            'top': '50%',
+                            'left': '50%',
+                            'transform': 'translate(-50%, -60%)',
+                            'fontSize': '18px',
+                            'color': 'black'
+                        }
+                    ),
+                    # Loading Output Placeholder
+                    html.Div(id='loading-output')
+                ], style={'position': 'relative', 'height': '100%'})
+            ),
+        ]),
+        
+        # Store Component to Hold Graph Data
+        dcc.Store(id='graph-store'),
+        
+        # Modal for Node and Edge Metadata
+        dbc.Modal(
+            [
+                dbc.ModalHeader(dbc.ModalTitle("Metadata")),
+                dbc.ModalBody([
+                    html.Div(id='modal-body-content')
+                ]),
+                dbc.ModalFooter(
+                    dbc.Button("Close", id="close-modal", className="ms-auto", n_clicks=0)
+                ),
+            ],
+            id="metadata-modal",
+            is_open=False,
+            size="lg",
+            scrollable=True,
+            backdrop="static",
+            centered=True,
+        ),
+    ])
+])
+# Callback to build the graph and store data
 @app.callback(
     [Output('graph-store', 'data'),
-     Output("loading-output-graph", "children")],
-    [Input('build-graph-button', 'n_clicks')],
-    [State('user-ids-input', 'value')],
+     Output('loading-output', 'children')],
+    Input('build-graph-button', 'n_clicks'),
+    State('user-ids-input', 'value'),
     prevent_initial_call=True
 )
 def build_graph(n_clicks, user_ids_input):
     if n_clicks is None or not user_ids_input:
-        print("Build Graph button not clicked or user IDs not provided.")
-        raise PreventUpdate
-
-    print("Build Graph callback triggered.")
+        return no_update, no_update
 
     try:
-        # Parse user IDs from input
         core_nodes = [uid.strip() for uid in user_ids_input.split(',') if uid.strip()]
-        print(f"Core nodes: {core_nodes}")
 
         # Fetch data using user-provided IDs
         fetcher = DataFetcher()
-        print("Fetching user data...")
         all_user_data = fetcher.get_all_users_data(core_nodes)
-        print("User data fetched.")
 
         # Build graph from fetched data
         gb = GraphBuilder()
-        print("Building graph...")
         G = gb.build_graph_from_data(all_user_data)
-        print("Graph built.")
 
         # Filter the graph based on core nodes
-        print("Filtering graph...")
         filtered_G = filter_graph(G, core_nodes)
-        print("Graph filtered.")
 
         # Get all timestamps and sort them
         all_timestamps = sorted([edge[2]['timestamp'] for edge in filtered_G.edges(data=True)])
         min_timestamp, max_timestamp = min(all_timestamps), max(all_timestamps)
 
-        # Adjust timestamps to be indexed from Jan 2020
-        min_timestamp = min_timestamp - jan_2020_timestamp
-        max_timestamp = max_timestamp - jan_2020_timestamp
-
         # Convert the graph to a JSON serializable format
-        print("Serializing graph data...")
         graph_data = nx.readwrite.json_graph.node_link_data(filtered_G)
         graph_data['min_timestamp'] = min_timestamp
         graph_data['max_timestamp'] = max_timestamp
-        print("Graph data serialized.")
 
-        return graph_data, ""
+        # Update the loading-output div (can be empty string)
+        return graph_data, ''
 
     except Exception as e:
-        print(f"Error in build_graph callback: {e}")
-        return dash.no_update, f"Error: {str(e)}"
+        # In case of error, handle the exception
+        return no_update, ''
 
 # Callback to update Cytoscape elements based on graph data, slider, and node taps
 @app.callback(
     Output('cytoscape-graph', 'elements'),
-    [
-        Input('time-slider', 'value'),
-        Input('cytoscape-graph', 'tapNodeData'),
-        Input('graph-store', 'data')
-    ],
-    [
-        State('user-ids-input', 'value'),
-    ]
+    [Input('time-slider', 'value'),
+     Input('cytoscape-graph', 'tapNodeData'),
+     Input('graph-store', 'data')],
+    State('user-ids-input', 'value')
 )
 def update_elements(selected_timestamp, tapNodeData, graph_data, user_ids_input):
     if not graph_data:
-        print("No graph data available.")
         return []
-
-    print("Update Elements callback triggered.")
-    print(f"Selected timestamp: {selected_timestamp}")
 
     # Reconstruct the graph
     G = nx.readwrite.json_graph.node_link_graph(graph_data, multigraph=True)
-    print("Graph reconstructed from graph-store.")
 
     core_nodes = [uid.strip() for uid in user_ids_input.split(',') if uid.strip()]
-    print(f"Core nodes in update_elements: {core_nodes}")
 
     min_timestamp = graph_data['min_timestamp']
     max_timestamp = graph_data['max_timestamp']
@@ -470,55 +497,81 @@ def update_elements(selected_timestamp, tapNodeData, graph_data, user_ids_input)
     Input('layout-dropdown', 'value')
 )
 def update_layout(layout):
-    print(f"Layout changed to: {layout}")
     return {
         'name': layout,
         'animate': True,
-        'nodeRepulsion': 51680,  # Increased by 50% from 34453
-        'idealEdgeLength': 827,  # Increased by 50% from 551
+        'nodeRepulsion': 51680,
+        'idealEdgeLength': 827,
         'nodeDimensionsIncludeLabels': True
     }
 
-# Callback to display node data
+# Callback to display node or edge data in modal
 @app.callback(
-    Output('node-data', 'children'),
-    Input('cytoscape-graph', 'tapNodeData')
+    [Output('metadata-modal', 'is_open'),
+     Output('modal-body-content', 'children')],
+    [Input('cytoscape-graph', 'tapNodeData'),
+     Input('cytoscape-graph', 'tapEdgeData'),
+     Input('close-modal', 'n_clicks')],
+    [State('metadata-modal', 'is_open'),
+     State('graph-store', 'data')]
 )
-def display_node_data(data):
-    if not data:
-        return "Click on a node to see its details"
-    node_info = [
-        html.H3(f"User: {data['label']}"),
-        html.P(f"FID: {data['fid']}"),
-        html.P(f"Display Name: {data['display_name']}"),
-        html.P(f"Followers: {data['follower_count']}"),
-        html.P(f"Following: {data['following_count']}"),
-        html.P(f"Connected Core Nodes: {data['connected_core_nodes']}")
-    ]
-    if data['is_core'] != 'true':
-        node_info.extend([
-            html.P(f"Centrality: {data['centrality']:.4f}"),
-            html.P(f"Betweenness: {data['betweenness']:.4f}")
-        ])
-    return html.Div(node_info)
+def display_metadata(node_data, edge_data, close_clicks, is_open, graph_data):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        return no_update, no_update
+    
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
-# Callback to display edge data
-@app.callback(
-    Output('edge-data', 'children'),
-    Input('cytoscape-graph', 'tapEdgeData')
-)
-def display_edge_data(data):
-    if not data:
-        return "Click on an edge to see its details"
-    edge_types = data.get('edge_types', {})
-    return html.Div([
-        html.H3(f"Edge: {data['source']} → {data['target']}"),
-        html.P(f"Total Weight: {data['weight']}"),
-        html.P(f"Normalized Weight: {data['normalized_weight']:.2f}"),
-        html.H4("Edge Type Counts:"),
-        html.Ul([html.Li(f"{edge_type}: {count}") for edge_type, count in edge_types.items()])
-    ])
+    if trigger_id == 'close-modal':
+        return False, no_update
 
+    if edge_data:
+        source = edge_data['source']
+        target = edge_data['target']
+        
+        # Find the nodes in graph_data that match the source and target IDs
+        source_node = next((node for node in graph_data['nodes'] if node['id'] == source), None)
+        target_node = next((node for node in graph_data['nodes'] if node['id'] == target), None)
+        
+        if source_node and target_node:
+            edge_info = [
+                html.H3(f"Edge: {source_node['username']} ↔ {target_node['username']}"),
+                html.P(f"Total Interactions: {edge_data['weight']}")
+            ]
+
+            for user, node in [(source, source_node), (target, target_node)]:
+                interactions = edge_data['interactions'][user]
+                total_interactions = sum(interactions.values())
+                edge_info.extend([
+                    html.H4(f"Username {node['username']}:"),
+                    html.P(f"{total_interactions} interactions initiated by {node['username']}"),
+                    html.Ul([
+                        html.Li(f"{count} {edge_type.lower()}{'s' if count > 1 else ''}")
+                        for edge_type, count in interactions.items()
+                    ])
+                ])
+
+            return True, html.Div(edge_info)
+        else:
+            return True, html.Div([html.P("Error: Unable to find node data")])
+
+    elif node_data:
+        node_info = [
+            html.H3(f"User: {node_data['label']}"),
+            html.P(f"FID: {node_data['fid']}"),
+            html.P(f"Display Name: {node_data['display_name']}"),
+            html.P(f"Followers: {node_data['follower_count']}"),
+            html.P(f"Following: {node_data['following_count']}"),
+            html.P(f"Connected Core Nodes: {node_data['connected_core_nodes']}")
+        ]
+        if node_data['is_core'] != 'true':
+            node_info.extend([
+                html.P(f"Centrality: {node_data['centrality']:.4f}"),
+                html.P(f"Betweenness: {node_data['betweenness']:.4f}")
+            ])
+        return True, html.Div(node_info)
+
+    return no_update, no_update
 # Run the Dash app
 if __name__ == '__main__':
     app.run_server(debug=True)
