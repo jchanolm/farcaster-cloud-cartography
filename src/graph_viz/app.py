@@ -525,7 +525,37 @@ def display_metadata(node_data, edge_data, close_clicks, is_open, graph_data):
     if trigger_id == 'close-modal':
         return False, no_update
 
-    if node_data:
+    if edge_data:
+        source = edge_data['source']
+        target = edge_data['target']
+        
+        # Find the nodes in graph_data that match the source and target IDs
+        source_node = next((node for node in graph_data['nodes'] if node['id'] == source), None)
+        target_node = next((node for node in graph_data['nodes'] if node['id'] == target), None)
+        
+        if source_node and target_node:
+            edge_info = [
+                html.H3(f"Edge: {source_node['username']} ↔ {target_node['username']}"),
+                html.P(f"Total Interactions: {edge_data['weight']}")
+            ]
+
+            for user, node in [(source, source_node), (target, target_node)]:
+                interactions = edge_data['interactions'][user]
+                total_interactions = sum(interactions.values())
+                edge_info.extend([
+                    html.H4(f"Username {node['username']}:"),
+                    html.P(f"{total_interactions} interactions initiated by {node['username']}"),
+                    html.Ul([
+                        html.Li(f"{count} {edge_type.lower()}{'s' if count > 1 else ''}")
+                        for edge_type, count in interactions.items()
+                    ])
+                ])
+
+            return True, html.Div(edge_info)
+        else:
+            return True, html.Div([html.P("Error: Unable to find node data")])
+
+    elif node_data:
         node_info = [
             html.H3(f"User: {node_data['label']}"),
             html.P(f"FID: {node_data['fid']}"),
@@ -541,28 +571,7 @@ def display_metadata(node_data, edge_data, close_clicks, is_open, graph_data):
             ])
         return True, html.Div(node_info)
 
-    elif edge_data:
-        source = edge_data['source']
-        target = edge_data['target']
-        
-        edge_info = [
-            html.H3(f"Edge: {source} ↔ {target}"),
-            html.P(f"Total Interactions: {edge_data['weight']}")
-        ]
-
-        for user in [source, target]:
-            interactions = edge_data['interactions'][user]
-            total_interactions = sum(interactions.values())
-            edge_info.extend([
-                html.H4(f"{user}"),
-                html.P(f"{total_interactions} interactions"),
-                html.Ul([html.Li(f"{edge_type}: {count}") for edge_type, count in interactions.items()])
-            ])
-
-        return True, html.Div(edge_info)
-
     return no_update, no_update
-
 # Run the Dash app
 if __name__ == '__main__':
     app.run_server(debug=True)
