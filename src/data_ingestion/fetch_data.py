@@ -1,9 +1,12 @@
 import os
 import time
 import json
+import boto3 
 from dotenv import load_dotenv
 import requests as r
 from requests import RequestException
+from botocore.exceptions import NoCredentialsError, ClientError
+
 
 load_dotenv()
 
@@ -17,8 +20,24 @@ class DataFetcher:
         self.data_dir = data_dir
         self.max_age_seconds = max_age_seconds
         self.NEYNAR_API_KEY = os.getenv('NEYNAR_API_KEY')
-
+        self.bucket_name = 'cloud-cartography'
+        self.AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY')
+        self.AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
         os.makedirs(self.data_dir, exist_ok=True)
+
+    def check_s3_exists(self, s3_key: str) -> bool:
+        """
+        Checks if a specific S3 object exists.
+        """
+        try:
+            self.s3_client.head_object(Bucket=self.bucket_name, Key=s3_key)
+            return True
+        except ClientError as e:
+            if e.response['Error']['Code'] == '404':
+                return False
+            else:
+                self.logger.error(f"Error checking existence of {s3_key} in S3: {e}")
+                return False
 
     def query_neynar_hub(self, endpoint, params=None):
         """
@@ -41,6 +60,7 @@ class DataFetcher:
         while True:
             for attempt in range(max_retries):
                 try:
+                    time.sleep(.1)
                     response = r.get(url, headers=headers, params=params)
                     response.raise_for_status()
                     data = response.json()
@@ -81,6 +101,7 @@ class DataFetcher:
         }
 
         try:
+            time.sleep(.1)
             response = r.get(base_url, headers=headers, params=params)
             response.raise_for_status()
             data = response.json()
@@ -161,6 +182,7 @@ class DataFetcher:
                     user_metadata_list.append(user_metadata)
 
         return user_metadata_list
+
 
     def get_user_metadata(self, fid):
         """Fetches user metadata for a single FID."""
@@ -311,7 +333,7 @@ class DataFetcher:
             likes = self.get_user_likes(fid)
             recasts = self.get_user_recasts(fid)
             casts = self.get_user_casts(fid)
-            followers = self.get_user_followers(fid)
+            # followers = self.get_user_followers(fid)
             following = self.get_user_follows(fid)
             # followers = 
             # following =
@@ -321,7 +343,7 @@ class DataFetcher:
                 'likes': likes,
                 'recasts': recasts,
                 'casts': casts,
-                'followers': followers,
+                # 'followers': followers,
                 'following': following
             }
 
@@ -354,7 +376,119 @@ class DataFetcher:
 
             return all_user_data            
 
-# if __name__ == "__main__":
+
+
+
+
+    def upload_json_to_s3(self, data, s3_key):
+        try:
+            s3_client = boto3.client(
+                's3',
+                region_name='us-east-1',
+                aws_access_key_id=self.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=self.AWS_SECRET_ACCESS_KEY
+            )
+            
+            # Convert data to JSON string
+            json_data = json.dumps(data)
+            
+            # Upload JSON data
+            s3_client.put_object(
+                Bucket=self.bucket_name,
+                Key=s3_key,
+                Body=json_data,
+                ContentType='application/json',
+                ACL='public-read'  # Makes the file publicly readable
+            )
+            
+            print(f"Successfully uploaded {s3_key} to {self.bucket_name}")
+            return True
+        except (NoCredentialsError, ClientError) as e:
+            print(f"Failed to upload {s3_key} to {self.bucket_name}. Error: {e}")
+            return False
+
+
+
+    # def get_all_users_data_s3(self, fids):
+    #         """Fetches and stores data for multiple users in S3."""
+    #         all_user_data = {}
+    #         for fid in fids:
+    #             print(f"Fetching data for FID: {fid}")
+    #             user_data = self.get_user_data(fid)
+    #             all_user_data[fid] = user_data
+
+    #             # Upload individual user data to S3
+    #             s3_key = f'user_{fid}_data.json'
+    #             self.upload_json_to_s3(user_data, s3_key)
+
+    #         print("Finished fetching individual user data. Now collecting connection metadata...")
+
+    #         # # Collect connection metadata after fetching all individual user data
+    #         # for fid, user_data in all_user_data.items():
+    #         #     print(f"Collecting connection metadata for FID: {fid}")
+    #         #     connections_metadata = self.get_user_metadata_for_connections(user_data)
+    #         #     user_data['connections_metadata'] = connections_metadata
+                
+    #         #     # Update S3 with new data including connections metadata
+    #         #     s3_key = f'user_{fid}_data.json'
+    #         #     self.upload_json_to_s3(user_data, s3_key)
+
+    #         return all_user_data
+
+
+    def get_all_users_data_s3(self, fids):
+        """
+        Fetches and stores data for multiple users in S3.
+        Processes each fid individually by fetching user data and collecting connections metadata.
+        Uploads to S3 only after adding connections metadata.
+
+        Args:
+            fids (List[str]): List of user IDs (FIDs) as strings.
+        """
+        total_users = len(fids)
+        processed_users = 0
+
+        for fid in fids:
+            try:
+                print(f"Processing FID: {fid} ({processed_users + 1}/{total_users})")
+
+                # Fetch user data
+                user_data = self.get_user_data(fid)
+                if not user_data:
+                    print(f"No data fetched for FID {fid}. Skipping.")
+                    continue
+
+                # Collect connections metadata
+                print(f"Collecting connections metadata for FID: {fid}")
+                connections_metadata = self.get_user_metadata_for_connections(user_data)
+
+                # Add connections metadata to user data
+                user_data['connections_metadata'] = connections_metadata
+                print(f"Added connections metadata to user data for FID: {fid}")
+
+                # Upload user data to S3
+                s3_key = f'user_{fid}_data.json'
+                upload_success = self.upload_json_to_s3(user_data, s3_key)
+                if upload_success:
+                    print(f"Successfully uploaded data for FID: {fid} to S3.")
+                else:
+                    print(f"Failed to upload data for FID: {fid} to S3.")
+
+                processed_users += 1
+
+            except Exception as e:
+                print(f"An error occurred while processing FID {fid}: {str(e)}")
+                continue
+
+            print(f"Completed processing for FID: {fid}\n")
+
+        print(f"Finished processing {processed_users} out of {total_users} users.")
+        if processed_users < total_users:
+            print(f"Warning: {total_users - processed_users} users were not processed successfully.")        
+if __name__ == "__main__":
+    fetcher = DataFetcher()
+    lis = ['190000', '190001']
+    fetcher.get_all_users_data_s3(lis)
     # fetcher = DataFetcher()
     # fetcher.get_user_data(['988', '378', '190000', '746'])
     # user_data = fetcher.fetch_and_store_user_data([5, 1677])
