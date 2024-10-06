@@ -122,13 +122,13 @@ def register_callbacks(app):
                 html.P(f"Display Name: {node_data['display_name']}"),
                 html.P(f"Followers: {node_data['follower_count']}"),
                 html.P(f"Following: {node_data['following_count']}"),
-                html.P(f"Connected Core Nodes: {node_data['connected_core_nodes']}")
+                html.P(f"Connected Core Nodes: {node_data['connected_core_nodes']}"),
+                html.P(f"Total Interactions: {node_data['interactions_count']}")
             ]
             if node_data['is_core'] != 'true':
                 node_info.extend([
                     html.P(f"Centrality: {node_data['centrality']:.4f}"),
-                    html.P(f"Betweenness: {node_data['betweenness']:.4f}"),
-                    html.P(f"Interactions with Core Nodes: {node_data['interactions_with_core']}")
+                    html.P(f"Betweenness: {node_data['betweenness']:.4f}")
                 ])
             return True, html.Div(node_info)
 
@@ -163,7 +163,6 @@ def register_callbacks(app):
                 return True, html.Div([html.P("Error: Unable to find node data")])
 
         return no_update, no_update
-
 
     @app.callback(
         Output('cytoscape-graph', 'zoom'),
