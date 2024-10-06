@@ -167,8 +167,7 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
                     'color': node_color,
                     'connected_core_nodes': connected_core_nodes,
                     'interactions_count': interactions_count[node],
-                    'pfp_url': data.get('pfp_url', '/assets/default_profile.png'),
-                    'background-image': data.get('pfp_url', '/assets/default_profile.png') if not is_core else None
+                    'pfp_url': data.get('pfp_url')
                 }
             }
         )    # Only include edges if it's not the initial stage (timestamp > min_timestamp)

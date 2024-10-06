@@ -43,19 +43,30 @@ class GraphBuilder:
     def build_graph_from_data(self, all_user_data: Dict[str, Dict]) -> nx.MultiDiGraph:
         G = nx.MultiDiGraph()
         total_nodes_created = 0
+        node_pfp_urls = {}
 
         # First, add nodes and their attributes
         for fid, user_data in all_user_data.items():
             # Add core node
             core_metadata = user_data['core_node_metadata']
             G.add_node(fid, **core_metadata)
+            if 'pfp_url' in core_metadata:
+                node_pfp_urls[fid] = core_metadata['pfp_url']
             total_nodes_created += 1
 
             # Add connections metadata
             for node in user_data.get("connections_metadata", []):
-                if not G.has_node(node['fid']):
+                if not G.has_node(node['fid']) or 'pfp_url' not in G.nodes[node['fid']]:
                     G.add_node(node['fid'], **node)
+                    if 'pfp_url' in node:
+                        node_pfp_urls[node['fid']] = node['pfp_url']
                     total_nodes_created += 1
+                elif 'pfp_url' in node:
+                    node_pfp_urls[node['fid']] = node['pfp_url']
+
+        # Update nodes with pfp_url
+        for node, pfp_url in node_pfp_urls.items():
+            G.nodes[node]['pfp_url'] = pfp_url
 
         self.logger.info(f"Created {total_nodes_created} unique nodes.")
 

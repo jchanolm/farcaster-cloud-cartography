@@ -3,6 +3,7 @@ import dash_bootstrap_components as dbc
 from dash import Input, Output, State, no_update, html
 from dash.exceptions import PreventUpdate
 import networkx as nx
+import requests
 
 from src.graph_viz.network_analysis import filter_graph, get_elements
 from src.data_ingestion.fetch_data import DataFetcher
@@ -120,7 +121,8 @@ def register_callbacks(app):
         if node_data:
             username = node_data['label']
             profile_url = f"https://warpcast.com/{username}"
-            profile_image_url = node_data.get('pfp_url', '/assets/default_profile.png')
+            profile_image_url = node_data['pfp_url']
+            print(profile_image_url)
 
             node_info = [
                 html.Div([
@@ -136,7 +138,7 @@ def register_callbacks(app):
                 html.P(f"Followers: {node_data['follower_count']}"),
                 html.P(f"Following: {node_data['following_count']}"),
                 html.P(f"Connected Core Nodes: {node_data['connected_core_nodes']}"),
-                html.P(f"Total Interactions: {node_data['interactions_count']}")
+                html.P(f"Total Interactions with Core Nodes: {node_data['interactions_count']}")
             ]
             if node_data['is_core'] != 'true':
                 node_info.extend([
