@@ -40,6 +40,13 @@ cyto_stylesheet = [
             'transition-timing-function': 'ease-in-out-cubic'
         }
     },
+    {
+    'selector': 'node[total_core_interactions > 0]',
+    'style': {
+        'border-width': '3px',
+        'border-color': '#FFD700'  # Gold color for nodes with core interactions
+    }
+    },
     # Highlighted nodes (along paths to core nodes)
     {
         'selector': 'node[node_to_core = "true"]',

@@ -32,6 +32,8 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
 
     edge_dict = {}
     edges_up_to_timestamp = []
+    interactions_with_core = {node: 0 for node in G.nodes() if node not in core_nodes}
+    
     for edge in G.edges(data=True):
         if edge[2]['timestamp'] <= timestamp:
             source = str(edge[0])
@@ -39,6 +41,13 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
             active_nodes.add(source)
             active_nodes.add(target)
             edges_up_to_timestamp.append(edge)
+            
+            # Count interactions with core nodes
+            if source in core_nodes and target not in core_nodes:
+                interactions_with_core[target] += 1
+            elif target in core_nodes and source not in core_nodes:
+                interactions_with_core[source] += 1
+            
             if source != target:
                 edge_type = edge[2].get('edge_type', 'Unknown')
                 key = tuple(sorted((source, target)))  # Ensure consistent ordering
@@ -125,12 +134,12 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
             1 for core_node in core_nodes if temp_G.has_edge(node, core_node)
         )
 
-        # Size nodes based on how many core nodes they're connected to
+        # Size nodes based on interactions with core nodes
         if is_core:
             node_size = 112.5  # Base size for core nodes
         else:
             base_size = 45  # Base size for non-core nodes
-            size_multiplier = 1 + (connected_core_nodes - 1) * 0.25  # Linear increase
+            size_multiplier = 1 + (interactions_with_core[node] * 0.1)  # Increase size based on interactions
             node_size = base_size * size_multiplier
 
         # Color nodes
@@ -157,7 +166,8 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
                     'centrality': centrality.get(node, 0) if not is_core else 'N/A',
                     'betweenness': betweenness.get(node, 0) if not is_core else 'N/A',
                     'color': node_color,
-                    'connected_core_nodes': connected_core_nodes
+                    'connected_core_nodes': connected_core_nodes,
+                    'interactions_with_core': interactions_with_core[node] if not is_core else 'N/A'
                 }
             }
         )

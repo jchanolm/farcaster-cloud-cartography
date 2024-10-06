@@ -97,13 +97,14 @@ def register_callbacks(app):
 
     @app.callback(
         [Output('metadata-modal', 'is_open'),
-         Output('modal-body-content', 'children')],
+        Output('modal-body-content', 'children')],
         [Input('cytoscape-graph', 'tapNodeData'),
-         Input('cytoscape-graph', 'tapEdgeData'),
-         Input('close-modal', 'n_clicks')],
+        Input('cytoscape-graph', 'tapEdgeData'),
+        Input('close-modal', 'n_clicks')],
         [State('metadata-modal', 'is_open'),
-         State('graph-store', 'data')]
+        State('graph-store', 'data')]
     )
+
     def display_metadata(node_data, edge_data, close_clicks, is_open, graph_data):
         ctx = dash.callback_context
         if not ctx.triggered:
@@ -114,7 +115,24 @@ def register_callbacks(app):
         if trigger_id == 'close-modal':
             return False, no_update
 
-        if edge_data:
+        if node_data:
+            node_info = [
+                html.H3(f"User: {node_data['label']}"),
+                html.P(f"FID: {node_data['fid']}"),
+                html.P(f"Display Name: {node_data['display_name']}"),
+                html.P(f"Followers: {node_data['follower_count']}"),
+                html.P(f"Following: {node_data['following_count']}"),
+                html.P(f"Connected Core Nodes: {node_data['connected_core_nodes']}")
+            ]
+            if node_data['is_core'] != 'true':
+                node_info.extend([
+                    html.P(f"Centrality: {node_data['centrality']:.4f}"),
+                    html.P(f"Betweenness: {node_data['betweenness']:.4f}"),
+                    html.P(f"Interactions with Core Nodes: {node_data['interactions_with_core']}")
+                ])
+            return True, html.Div(node_info)
+
+        elif edge_data:
             source = edge_data['source']
             target = edge_data['target']
             
@@ -144,23 +162,8 @@ def register_callbacks(app):
             else:
                 return True, html.Div([html.P("Error: Unable to find node data")])
 
-        elif node_data:
-            node_info = [
-                html.H3(f"User: {node_data['label']}"),
-                html.P(f"FID: {node_data['fid']}"),
-                html.P(f"Display Name: {node_data['display_name']}"),
-                html.P(f"Followers: {node_data['follower_count']}"),
-                html.P(f"Following: {node_data['following_count']}"),
-                html.P(f"Connected Core Nodes: {node_data['connected_core_nodes']}")
-            ]
-            if node_data['is_core'] != 'true':
-                node_info.extend([
-                    html.P(f"Centrality: {node_data['centrality']:.4f}"),
-                    html.P(f"Betweenness: {node_data['betweenness']:.4f}")
-                ])
-            return True, html.Div(node_info)
-
         return no_update, no_update
+
 
     @app.callback(
         Output('cytoscape-graph', 'zoom'),

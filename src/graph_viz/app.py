@@ -79,7 +79,7 @@ app.layout = html.Div([
             'name': DEFAULT_LAYOUT,
             **CYTOSCAPE_LAYOUT_SETTINGS,
             'fit': False,  # Disable automatic fitting
-            'zoom': 0.1,   # Set a very low zoom level
+            'zoom': 0.05,   # Set a very low zoom level
             'pan': {'x': 0, 'y': 0}  # Center the view
         },
         stylesheet=cyto_stylesheet,
