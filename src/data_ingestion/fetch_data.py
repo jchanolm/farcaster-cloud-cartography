@@ -302,6 +302,56 @@ class DataFetcher:
 
         return all_user_data
 
+    def get_all_users_data_s3(self, fids):
+        """
+        Fetches and stores data for multiple users in S3.
+        Processes each fid individually by fetching user data and collecting connections metadata.
+        Uploads to S3 only after adding connections metadata.
+
+        Args:
+            fids (List[str]): List of user IDs (FIDs) as strings.
+        """
+        total_users = len(fids)
+        processed_users = 0
+
+        for fid in fids:
+            try:
+                print(f"Processing FID: {fid} ({processed_users + 1}/{total_users})")
+
+                # Fetch user data
+                user_data = self.get_user_data(fid)
+                if not user_data:
+                    print(f"No data fetched for FID {fid}. Skipping.")
+                    continue
+
+                # Collect connections metadata
+                print(f"Collecting connections metadata for FID: {fid}")
+                connections_metadata = self.get_user_metadata_for_connections(user_data)
+
+                # Add connections metadata to user data
+                user_data['connections_metadata'] = connections_metadata
+                print(f"Added connections metadata to user data for FID: {fid}")
+
+                # Upload user data to S3
+                s3_key = f'user_{fid}_data.json'
+                upload_success = self.upload_json_to_s3(user_data, s3_key)
+                if upload_success:
+                    print(f"Successfully uploaded data for FID: {fid} to S3.")
+                else:
+                    print(f"Failed to upload data for FID: {fid} to S3.")
+
+                processed_users += 1
+
+            except Exception as e:
+                print(f"An error occurred while processing FID {fid}: {str(e)}")
+                continue
+
+            print(f"Completed processing for FID: {fid}\n")
+
+        print(f"Finished processing {processed_users} out of {total_users} users.")
+        if processed_users < total_users:
+            print(f"Warning: {total_users - processed_users} users were not processed successfully.")        
+
 if __name__ == "__main__":
     fetcher = DataFetcher()
     test_fids = ['190000', '190001']
