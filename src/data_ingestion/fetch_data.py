@@ -7,6 +7,7 @@ import requests as r
 from requests import RequestException
 from botocore.exceptions import NoCredentialsError, ClientError
 import logging
+from datetime import datetime, timezone
 
 load_dotenv()
 
@@ -29,6 +30,13 @@ class DataFetcher:
         
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
+
+        # Farcaster Epoch (Jan 1, 2021 00:00:00 UTC)
+        self.FARCASTER_EPOCH = datetime(2021, 1, 1, tzinfo=timezone.utc)
+
+    def convert_timestamp(self, timestamp):
+        """Convert Farcaster timestamp to UTC datetime."""
+        return self.FARCASTER_EPOCH + timedelta(seconds=int(timestamp))
 
     def check_s3_exists(self, fid: str) -> bool:
         s3_key = f'user_{fid}_data.json'
@@ -92,6 +100,9 @@ class DataFetcher:
                     data = response.json()
                     
                     if 'messages' in data:
+                        for message in data['messages']:
+                            if 'timestamp' in message.get('data', {}):
+                                message['data']['timestamp'] = self.convert_timestamp(message['data']['timestamp']).isoformat()
                         all_messages.extend(data['messages'])
                         self.logger.info(f"Retrieved {len(all_messages)} messages total...")
                     

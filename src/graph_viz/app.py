@@ -20,8 +20,8 @@ app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 app.layout = html.Div([
     # Header Section
     html.Div([
-        html.H1(
-            "Farcaster Network Visualization",
+        html.H2(
+            "Cloud Cartography - Farcaster",
             style={
                 'color': 'black',
                 'display': 'inline-block',
