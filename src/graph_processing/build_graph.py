@@ -12,63 +12,33 @@ class GraphBuilder:
     def __init__(self):
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
+        self.data_fetcher = DataFetcher()
 
-    # def load_data(self, fid: str) -> Optional[Dict]:
-    #     filepath = os.path.join(self.data_dir, f'user_{fid}_data.json')
-    #     with open(filepath, 'r') as f:
-    #         fid_data = json.load(f)
-    #     return fid_data
+    def create_edges(self, G, fid, node_data, edge_type):
+        if edge_type not in node_data:
+            return
 
-    def create_edges_for_likes(self, G, fid, node_data):
-        likes_data = node_data.get('likes', [])
-        if len(likes_data) > 0:
-            likes_df = pd.DataFrame(likes_data)
-            likes_df['source'] = str(fid)
-            likes_df = likes_df.rename(columns={
-                'target_fid': 'target'
-            })
-            likes_df['edge_type'] = 'LIKED'
-            edge_attr_columns = ['edge_type', 'timestamp']
-            G.add_edges_from(nx.from_pandas_edgelist(
-                likes_df,
-                source='source',
-                target='target',
-                edge_attr=edge_attr_columns,
-                create_using=nx.MultiDiGraph()
-            ).edges(data=True))
+        df = pd.DataFrame(node_data[edge_type])
+        if df.empty:
+            return
 
-            logging.info(f"Added {len(likes_df)} LIKE edges for FID {fid}")
+        df['source'] = df['source'].astype(str)
+        df['target'] = df['target'].astype(str)
+        df['edge_type'] = edge_type.upper()
 
-    def create_edges_for_recasts(self, G, fid, node_data):
-        recasts_data = node_data.get('recasts', [])
-        if len(recasts_data) > 0:
-            recasts_df = pd.DataFrame(recasts_data)
-            edge_attr_columns = ['edge_type', 'timestamp', 'target_hash']
-            G.add_edges_from(nx.from_pandas_edgelist(
-                recasts_df,
-                source='source',
-                target='target',
-                edge_attr=edge_attr_columns,
-                create_using=nx.MultiDiGraph
-            ).edges(data=True))
+        edge_attr_columns = ['edge_type', 'timestamp']
+        if 'target_hash' in df.columns:
+            edge_attr_columns.append('target_hash')
 
-            logging.info(f"Added {len(recasts_df)} RECASTED edges for FID {fid}")
+        G.add_edges_from(nx.from_pandas_edgelist(
+            df,
+            source='source',
+            target='target',
+            edge_attr=edge_attr_columns,
+            create_using=nx.MultiDiGraph
+        ).edges(data=True))
 
-    def create_edges_for_casts(self, G, fid, node_data):
-        casts_data = node_data.get('casts', [])
-        if len(casts_data) > 0:
-            casts_df = pd.DataFrame(casts_data)
-            print(casts_df.head())
-            edge_attr_columns = ['edge_type', 'timestamp']
-            G.add_edges_from(nx.from_pandas_edgelist(
-                casts_df,
-                source='source',
-                target='target',
-                edge_attr=edge_attr_columns,
-                create_using=nx.MultiDiGraph
-            ).edges(data=True))
-
-            logging.info(f"Added {len(casts_df)} REPLIED edges for FID {fid}")
+        self.logger.info(f"Added {len(df)} {edge_type.upper()} edges for FID {fid}")
 
     def build_graph_from_data(self, all_user_data: Dict[str, Dict]) -> nx.MultiDiGraph:
         G = nx.MultiDiGraph()
@@ -84,38 +54,63 @@ class GraphBuilder:
             # Add connections metadata
             for node in user_data.get("connections_metadata", []):
                 if not G.has_node(node['fid']):
-                    G.add_node(node['fid'],
-                            username=node['username'],
-                            display_name=node['display_name'],
-                            pfp_url=node['pfp_url'],
-                            follower_count=node['follower_count'],
-                            following_count=node['following_count'])
+                    G.add_node(node['fid'], **node)
                     total_nodes_created += 1
 
-        logging.info(f"Created {total_nodes_created} unique nodes.")
+        self.logger.info(f"Created {total_nodes_created} unique nodes.")
 
         # Then, add edges
         for fid, user_data in all_user_data.items():
-            self.create_edges_for_likes(G, fid, user_data)
-            self.create_edges_for_recasts(G, fid, user_data)
-            self.create_edges_for_casts(G, fid, user_data)
+            self.create_edges(G, fid, user_data, 'likes')
+            self.create_edges(G, fid, user_data, 'recasts')
+            self.create_edges(G, fid, user_data, 'casts')
+            self.create_edges(G, fid, user_data, 'following')
 
-        logging.info(f"Graph has {G.number_of_nodes()} nodes")
-        logging.info(f"Graph has {G.number_of_edges()} edges")
+        self.logger.info(f"Graph has {G.number_of_nodes()} nodes and {G.number_of_edges()} edges")
         return G
 
-    def save_graph_as_json(self, G, fids):
+    def calculate_connection_strength(self, G, core_nodes):
+        connection_strength = {}
+        for node in G.nodes():
+            if node not in core_nodes:
+                strengths = []
+                for core_node in core_nodes:
+                    edge_count = (
+                        len(G.get_edge_data(node, core_node, default={}))
+                        + len(G.get_edge_data(core_node, node, default={}))
+                    )
+                    strengths.append(edge_count)
+                connection_strength[node] = min(strengths) if strengths else 0
+        return connection_strength
+
+    def filter_graph(self, G, core_nodes, top_n=25):
+        connection_strength = self.calculate_connection_strength(G, core_nodes)
+        top_nodes = sorted(connection_strength, key=connection_strength.get, reverse=True)[:top_n]
+        filtered_nodes = set(top_nodes + core_nodes)
+        return G.subgraph(filtered_nodes).copy()
+
+    def build_and_filter_graph(self, fids: List[str]) -> nx.MultiDiGraph:
+        all_user_data = self.data_fetcher.get_all_users_data(fids)
+        G = self.build_graph_from_data(all_user_data)
+        filtered_G = self.filter_graph(G, fids)
+        return filtered_G
+
+    def save_graph_as_json(self, G, fids, output_dir="data/processed"):
+        os.makedirs(output_dir, exist_ok=True)
         graph_data = nx.node_link_data(G)
         filename = f"graph_{'_'.join(fids)}.json"
-        filepath = os.path.join(self.processed_dir, filename)
+        filepath = os.path.join(output_dir, filename)
         
         with open(filepath, 'w') as f:
             json.dump(graph_data, f)
         
-        logging.info(f"Graph saved as JSON to {filepath}")
+        self.logger.info(f"Graph saved as JSON to {filepath}")
 
-
-# if __name__ == "__main__":
-#     gb = GraphBuilder()
-#     # No hardcoded FIDs, they will be passed in from the app
-#     logging.info("Ready to build graphs based on input FIDs.")
+if __name__ == "__main__":
+    # Example usage
+    gb = GraphBuilder()
+    test_fids = ['190000', '190001']  # Example FIDs
+    filtered_graph = gb.build_and_filter_graph(test_fids)
+    gb.save_graph_as_json(filtered_graph, test_fids)
+    print(f"Built and saved graph for FIDs: {test_fids}")
+    print(f"Graph has {filtered_graph.number_of_nodes()} nodes and {filtered_graph.number_of_edges()} edges")
