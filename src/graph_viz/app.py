@@ -70,26 +70,26 @@ app.layout = html.Div([
         ]),
         
         # Cytoscape Graph Component
-# Cytoscape Graph Component
-    cyto.Cytoscape(
-        id='cytoscape-graph',
-        elements=[],
-        style=CYTOSCAPE_STYLE,
-        layout={
-            'name': DEFAULT_LAYOUT,
-            **CYTOSCAPE_LAYOUT_SETTINGS,
-            'fit': False,  # Disable automatic fitting
-            'zoom': 0.1,   # Set a very low zoom level
-            'pan': {'x': 0, 'y': 0}  # Center the view
-        },
-        stylesheet=cyto_stylesheet,
-        minZoom=0.05,
-        maxZoom=2,
-        autoungrabify=True,  # Prevent nodes from being grabbed and moved
-        userZoomingEnabled=True,
-        userPanningEnabled=True,
-        boxSelectionEnabled=True
-    ),
+        cyto.Cytoscape(
+            id='cytoscape-graph',
+            elements=[],
+            style=CYTOSCAPE_STYLE,
+            layout={
+                'name': DEFAULT_LAYOUT,
+                **CYTOSCAPE_LAYOUT_SETTINGS,
+                'fit': False,  # Disable automatic fitting
+                'zoom': 0.05,   # Set a very low zoom level
+                'pan': {'x': 0, 'y': 0}  # Center the view
+            },
+            stylesheet=cyto_stylesheet,
+            minZoom=0.05,
+            maxZoom=2,
+            autoungrabify=True,  # Prevent nodes from being grabbed and moved
+            userZoomingEnabled=True,
+            userPanningEnabled=True,
+            boxSelectionEnabled=True
+        ),
+        
         # Loading Overlay with Text
         html.Div([
             dcc.Loading(
@@ -120,22 +120,21 @@ app.layout = html.Div([
         
         # Modal for Node and Edge Metadata
         dbc.Modal(
-            [
-                dbc.ModalHeader(dbc.ModalTitle("Metadata")),
-                dbc.ModalBody([
-                    html.Div(id='modal-body-content')
-                ]),
-                dbc.ModalFooter(
-                    dbc.Button("Close", id="close-modal", className="ms-auto", n_clicks=0)
-                ),
-            ],
-            id="metadata-modal",
-            is_open=False,
-            size="lg",
-            scrollable=True,
-            backdrop="static",
-            centered=True,
-        ),
+        [
+            dbc.ModalBody([
+                html.Div(id='modal-content')  # Changed from 'modal-body-content' to 'modal-content'
+            ]),
+            dbc.ModalFooter(
+                dbc.Button("Close", id="close-modal", className="ms-auto", n_clicks=0)
+            ),
+        ],
+        id="metadata-modal",
+        is_open=False,
+        size="lg",
+        scrollable=True,
+        backdrop="static",
+        centered=True,
+    ),
     ])
 ])
 

@@ -32,6 +32,8 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
 
     edge_dict = {}
     edges_up_to_timestamp = []
+    interactions_count = {node: 0 for node in G.nodes()}  # Count for all nodes
+    
     for edge in G.edges(data=True):
         if edge[2]['timestamp'] <= timestamp:
             source = str(edge[0])
@@ -39,6 +41,11 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
             active_nodes.add(source)
             active_nodes.add(target)
             edges_up_to_timestamp.append(edge)
+            
+            # Count interactions for all nodes
+            interactions_count[source] += 1
+            interactions_count[target] += 1
+            
             if source != target:
                 edge_type = edge[2].get('edge_type', 'Unknown')
                 key = tuple(sorted((source, target)))  # Ensure consistent ordering
@@ -116,6 +123,9 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
     max_centrality = max(centrality.values()) if centrality else 1
     max_betweenness = max(betweenness.values()) if betweenness else 1
 
+    # Find the maximum interaction count for normalization
+    max_interactions = max(interactions_count.values()) if interactions_count else 1
+
     for node in active_nodes:
         data = G.nodes[node]
         is_core = node in core_nodes
@@ -125,13 +135,10 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
             1 for core_node in core_nodes if temp_G.has_edge(node, core_node)
         )
 
-        # Size nodes based on how many core nodes they're connected to
-        if is_core:
-            node_size = 112.5  # Base size for core nodes
-        else:
-            base_size = 45  # Base size for non-core nodes
-            size_multiplier = 1 + (connected_core_nodes - 1) * 0.25  # Linear increase
-            node_size = base_size * size_multiplier
+        # Size nodes based on interactions
+        base_size = 45  # Base size for all nodes
+        size_multiplier = 1 + (interactions_count[node] / max_interactions)  # Normalize size based on interactions
+        node_size = base_size * size_multiplier
 
         # Color nodes
         if is_core:
@@ -142,6 +149,7 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
                 node_color = f"rgb({int(255 * betweenness.get(node, 0) / max_betweenness)}, 0, 255)"
             else:
                 node_color = "rgb(0, 0, 255)"  # Default color if max_betweenness is 0
+
 
         cyto_elements.append(
             {
@@ -157,12 +165,13 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
                     'centrality': centrality.get(node, 0) if not is_core else 'N/A',
                     'betweenness': betweenness.get(node, 0) if not is_core else 'N/A',
                     'color': node_color,
-                    'connected_core_nodes': connected_core_nodes
+                    'connected_core_nodes': connected_core_nodes,
+                    'interactions_count': interactions_count[node],
+                    'pfp_url': data.get('pfp_url', '/assets/default_profile.png'),
+                    'background-image': data.get('pfp_url', '/assets/default_profile.png') if not is_core else None
                 }
             }
-        )
-
-    # Only include edges if it's not the initial stage (timestamp > min_timestamp)
+        )    # Only include edges if it's not the initial stage (timestamp > min_timestamp)
     if timestamp > min_timestamp:
         cyto_elements.extend(list(edge_dict.values()))
 

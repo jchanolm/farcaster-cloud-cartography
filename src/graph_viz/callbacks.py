@@ -1,4 +1,5 @@
 import dash
+import dash_bootstrap_components as dbc
 from dash import Input, Output, State, no_update, html
 from dash.exceptions import PreventUpdate
 import networkx as nx
@@ -9,8 +10,8 @@ from src.graph_processing.build_graph import GraphBuilder
 
 def register_callbacks(app):
     @app.callback(
-        [Output('graph-store', 'data'),
-         Output('loading-output', 'children')],
+        Output('graph-store', 'data'),
+        Output('loading-output', 'children'),
         Input('build-graph-button', 'n_clicks'),
         State('user-ids-input', 'value'),
         prevent_initial_call=True
@@ -51,9 +52,9 @@ def register_callbacks(app):
 
     @app.callback(
         Output('cytoscape-graph', 'elements'),
-        [Input('time-slider', 'value'),
-         Input('cytoscape-graph', 'tapNodeData'),
-         Input('graph-store', 'data')],
+        Input('time-slider', 'value'),
+        Input('cytoscape-graph', 'tapNodeData'),
+        Input('graph-store', 'data'),
         State('user-ids-input', 'value')
     )
     def update_elements(selected_timestamp, tapNodeData, graph_data, user_ids_input):
@@ -96,71 +97,84 @@ def register_callbacks(app):
         }
 
     @app.callback(
-        [Output('metadata-modal', 'is_open'),
-         Output('modal-body-content', 'children')],
-        [Input('cytoscape-graph', 'tapNodeData'),
-         Input('cytoscape-graph', 'tapEdgeData'),
-         Input('close-modal', 'n_clicks')],
-        [State('metadata-modal', 'is_open'),
-         State('graph-store', 'data')]
+        Output('metadata-modal', 'is_open'),
+        Output('modal-content', 'children'),
+        Output('metadata-modal', 'style'),
+        Input('cytoscape-graph', 'tapNodeData'),
+        Input('cytoscape-graph', 'tapEdgeData'),
+        Input('close-modal', 'n_clicks'),
+        State('metadata-modal', 'is_open'),
+        State('metadata-modal', 'style'),
+        prevent_initial_call=True
     )
-    def display_metadata(node_data, edge_data, close_clicks, is_open, graph_data):
+    def update_modal(node_data, edge_data, close_clicks, is_open, current_style):
         ctx = dash.callback_context
         if not ctx.triggered:
-            return no_update, no_update
-        
+            return is_open, dash.no_update, current_style
+
         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
         if trigger_id == 'close-modal':
-            return False, no_update
+            return False, dash.no_update, {'display': 'none'}
 
-        if edge_data:
-            source = edge_data['source']
-            target = edge_data['target']
-            
-            # Find the nodes in graph_data that match the source and target IDs
-            source_node = next((node for node in graph_data['nodes'] if node['id'] == source), None)
-            target_node = next((node for node in graph_data['nodes'] if node['id'] == target), None)
-            
-            if source_node and target_node:
-                edge_info = [
-                    html.H3(f"Edge: {source_node['username']} ↔ {target_node['username']}"),
-                    html.P(f"Total Interactions: {edge_data['weight']}")
-                ]
+        if node_data:
+            username = node_data['label']
+            profile_url = f"https://warpcast.com/{username}"
+            profile_image_url = node_data.get('pfp_url', '/assets/default_profile.png')
 
-                for user, node in [(source, source_node), (target, target_node)]:
-                    interactions = edge_data['interactions'][user]
-                    total_interactions = sum(interactions.values())
-                    edge_info.extend([
-                        html.H4(f"Username {node['username']}:"),
-                        html.P(f"{total_interactions} interactions initiated by {node['username']}"),
-                        html.Ul([
-                            html.Li(f"{count} {edge_type.lower()}{'s' if count > 1 else ''}")
-                            for edge_type, count in interactions.items()
-                        ])
-                    ])
-
-                return True, html.Div(edge_info)
-            else:
-                return True, html.Div([html.P("Error: Unable to find node data")])
-
-        elif node_data:
             node_info = [
-                html.H3(f"User: {node_data['label']}"),
+                html.Div([
+                    html.A(
+                        html.Img(src=profile_image_url, style={'width': '50px', 'height': '50px', 'borderRadius': '50%', 'marginRight': '10px'}),
+                        href=profile_url,
+                        target="_blank"
+                    ),
+                    html.H3(username, style={'display': 'inline-block', 'verticalAlign': 'middle'})
+                ], style={'marginBottom': '20px'}),
                 html.P(f"FID: {node_data['fid']}"),
                 html.P(f"Display Name: {node_data['display_name']}"),
                 html.P(f"Followers: {node_data['follower_count']}"),
                 html.P(f"Following: {node_data['following_count']}"),
-                html.P(f"Connected Core Nodes: {node_data['connected_core_nodes']}")
+                html.P(f"Connected Core Nodes: {node_data['connected_core_nodes']}"),
+                html.P(f"Total Interactions: {node_data['interactions_count']}")
             ]
             if node_data['is_core'] != 'true':
                 node_info.extend([
                     html.P(f"Centrality: {node_data['centrality']:.4f}"),
                     html.P(f"Betweenness: {node_data['betweenness']:.4f}")
                 ])
-            return True, html.Div(node_info)
+            
+            node_info.append(
+                html.A("View on Warpcast", href=profile_url, target="_blank", 
+                       style={'display': 'block', 'marginTop': '20px', 'textAlign': 'center'})
+            )
+            
+            return True, node_info, {'display': 'block'}
 
-        return no_update, no_update
+        elif edge_data:
+            source = edge_data['source']
+            target = edge_data['target']
+            
+            edge_info = [
+                html.H3(f"Edge: {source} ↔ {target}"),
+                html.P(f"Total Interactions: {edge_data['weight']}")
+            ]
+
+            for node in [source, target]:
+                interactions = edge_data['interactions'][node]
+                total_interactions = sum(interactions.values())
+                edge_info.extend([
+                    html.H4(f"Node {node}:"),
+                    html.P(f"{total_interactions} interactions initiated"),
+                    html.Ul([
+                        html.Li(f"{count} {edge_type.lower()}{'s' if count > 1 else ''}")
+                        for edge_type, count in interactions.items()
+                    ])
+                ])
+
+            return True, edge_info, {'display': 'block'}
+
+        return is_open, dash.no_update, current_style
 
     @app.callback(
         Output('cytoscape-graph', 'zoom'),
