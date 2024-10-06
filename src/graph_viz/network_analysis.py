@@ -150,6 +150,7 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
             else:
                 node_color = "rgb(0, 0, 255)"  # Default color if max_betweenness is 0
 
+
         cyto_elements.append(
             {
                 'data': {
@@ -165,12 +166,12 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
                     'betweenness': betweenness.get(node, 0) if not is_core else 'N/A',
                     'color': node_color,
                     'connected_core_nodes': connected_core_nodes,
-                    'interactions_count': interactions_count[node]
+                    'interactions_count': interactions_count[node],
+                    'pfp_url': data.get('pfp_url', '/assets/default_profile.png'),
+                    'background-image': data.get('pfp_url', '/assets/default_profile.png') if not is_core else None
                 }
             }
-        )
-
-    # Only include edges if it's not the initial stage (timestamp > min_timestamp)
+        )    # Only include edges if it's not the initial stage (timestamp > min_timestamp)
     if timestamp > min_timestamp:
         cyto_elements.extend(list(edge_dict.values()))
 
