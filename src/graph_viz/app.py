@@ -25,33 +25,39 @@ app.layout = html.Div([
     # Header Section with User IDs Input, Network Metrics, and Layout Algorithm Selection
     html.Div([
         html.Div([
-            html.H2(
+            html.H4(
                 "Cloud Cartography",
                 style={
                     'color': 'black',
-                    'display': 'inline-block',
+                    'display': 'block',
                     'margin-right': '24px',
                     'margin-left': '24px',
-                    'margin-top': '24px',
-                    'margin-bottom': '12px',
+                    'margin-top': '12px',
+                    'margin-bottom': '6px',
                     'font-family': 'Open Sans, sans-serif'
                 }
             ),
             html.Div([
                 dcc.Input(id='user-ids-input', type='text', placeholder='Enter FIDs (comma-separated)', style={'width': '300px', 'margin-right': '12px'}),
                 html.Button('Build Graph', id='build-graph-button', n_clicks=0),
-            ], style={'display': 'inline-block', 'vertical-align': 'middle'}),
+            ], style={'display': 'block', 'margin-left': '24px', 'margin-top': '6px'}),
+            # Instruction text
+            html.Div([
+                html.I("Click nodes for account details, click edges for relationship details."),
+            ],
+                     style={'text-align': 'left', 'padding': '6px', 'font-style': 'italic', 'margin-left': '24px'}),
         ], style={'display': 'inline-block', 'width': '60%'}),
         html.Div([
-            html.H4("Network Metrics", style={'font-family': 'Open Sans, sans-serif', 'margin-bottom': '6px'}),
+            html.H5("Network Metrics", style={'font-family': 'Open Sans, sans-serif', 'margin-bottom': '3px'}),
             html.Div([
                 html.Div(id='node-count', style={'display': 'inline-block', 'margin-right': '12px'}),
                 html.Div(id='edge-count', style={'display': 'inline-block'}),
             ]),
-            html.Button('View Matrices', id='open-matrices-modal', n_clicks=0, style={'margin-top': '6px'}),
+            html.Br(),
+            html.Button('View Matrices', id='open-matrices-modal', n_clicks=0, style={'margin-top': '-14px'}),
         ], style={'display': 'inline-block', 'width': '20%', 'vertical-align': 'top', 'padding-top': '24px'}),
         html.Div([
-            html.H4("Select Layout Algo", style={
+            html.H5("Select Layout Algo", style={
                 'margin-right': '12px',
                 'font-family': 'Open Sans, sans-serif'
             }),
@@ -67,7 +73,7 @@ app.layout = html.Div([
             ], style={'display': 'inline-block', 'position': 'relative'}),
         ], style={'display': 'inline-block', 'width': '20%', 'vertical-align': 'top', 'padding-top': '24px'}),
     ], style={'margin-bottom': '12px'}),
-        
+    
     # Time Slider
     html.Div([
         dcc.Slider(id='time-slider', min=0, max=100, value=0, marks={}, step=10),
@@ -80,17 +86,20 @@ app.layout = html.Div([
             id='cytoscape-graph',
             elements=[],
             style=CYTOSCAPE_STYLE,
-            layout={'name': DEFAULT_LAYOUT, **CYTOSCAPE_LAYOUT_SETTINGS, 'fit': True},
+            layout={
+                'name': DEFAULT_LAYOUT,
+                **CYTOSCAPE_LAYOUT_SETTINGS
+            },
             stylesheet=cyto_stylesheet,
-            minZoom=0.1,
+            minZoom=0.2,
             maxZoom=3,
-            autoungrabify=True,
+            autoungrabify=False,
             userZoomingEnabled=True,
             userPanningEnabled=True,
             boxSelectionEnabled=True
         ),
-    ], style={'height': 'calc(85vh - 100px)', 'padding-left': '24px'}),
-
+    ], style={'height': '85vh', 'width': '100%', 'padding': '12px'}),
+    
     # Matrices Modal
     dbc.Modal([
         dbc.ModalHeader("Network Matrices"),
