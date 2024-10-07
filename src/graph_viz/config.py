@@ -28,7 +28,7 @@ MAX_EDGE_WIDTH = 15
 # Cytoscape settings
 CYTOSCAPE_STYLE = {
     'width': '100%',
-    'height': '800px',
+    'height': '85vh',
     'background-color': 'white'
 }
 
@@ -44,25 +44,25 @@ LAYOUT_OPTIONS = [
 CYTOSCAPE_LAYOUT_SETTINGS = {
     'animate': False,  # Disable animation for initial layout
     'randomize': True,  # Randomize the initial layout
-    'componentSpacing': 1000,
-    'nodeRepulsion': 1000000,
-    'nodeOverlap': 100,
-    'idealEdgeLength': 500,
-    'edgeElasticity': 100,
-    'nestingFactor': 1.2,
-    'gravity': 0.1,
-    'numIter': 5000,
-    'initialTemp': 10000,
-    'coolingFactor': 0.99,
+    'componentSpacing': 500,  # Reduced from 1000
+    'nodeRepulsion': 15000,  # Reduced from 25000
+    'nodeOverlap': 50,  # Reduced from 100
+    'idealEdgeLength': 125,  # Reduced from 500
+    'edgeElasticity': 50,  # Reduced from 100
+    'nestingFactor': 1.1,  # Reduced from 1.2
+    'gravity': 0.2,  # Increased from 0.1
+    'numIter': 2500,  # Reduced from 5000
+    'initialTemp': 5000,  # Reduced from 10000
+    'coolingFactor': 0.95,  # Reduced from 0.99
     'minTemp': 1.0,
-    'fit': False,  # Disable fitting
-    'padding': 500
+    'fit': True,
+    'padding': 30  # Reduced from 500
 }
 
 # Default layout settings (for backwards compatibility)
 DEFAULT_LAYOUT_SETTINGS = {
     'animate': True,
-    'nodeRepulsion': 50000,
+    'nodeRepulsion': 25000,
     'idealEdgeLength': 827,
     'nodeDimensionsIncludeLabels': True
 }
