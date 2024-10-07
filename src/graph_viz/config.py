@@ -42,27 +42,31 @@ LAYOUT_OPTIONS = [
 
 # Cytoscape layout settings
 CYTOSCAPE_LAYOUT_SETTINGS = {
-    'animate': False,  # Disable animation for initial layout
-    'randomize': True,  # Randomize the initial layout
-    'componentSpacing': 500,  # Reduced from 1000
-    'nodeRepulsion': 15000,  # Reduced from 25000
-    'nodeOverlap': 50,  # Reduced from 100
-    'idealEdgeLength': 125,  # Reduced from 500
-    'edgeElasticity': 50,  # Reduced from 100
-    'nestingFactor': 1.1,  # Reduced from 1.2
-    'gravity': 0.2,  # Increased from 0.1
-    'numIter': 2500,  # Reduced from 5000
-    'initialTemp': 5000,  # Reduced from 10000
-    'coolingFactor': 0.95,  # Reduced from 0.99
+    'animate': True,  # Enable animation for smoother transitions
+    'animationDuration': 100,  # Animation duration in milliseconds
+    'animationEasing': 'ease-in-out-cubic',  # Easing function for smoother animation
+    'randomize': False,  # Disable randomization for more predictable layouts
+    'componentSpacing': 300,  # Further reduced for tighter layout
+    'nodeRepulsion': 10000,  # Further reduced for less aggressive node separation
+    'nodeOverlap': 30,  # Further reduced to allow some overlap
+    'idealEdgeLength': 100,  # Further reduced for tighter layout
+    'edgeElasticity': 30,  # Reduced for more flexible edges
+    'nestingFactor': 1.05,  # Slightly reduced nesting factor
+    'gravity': 0.3,  # Increased gravity for more compact layout
+    'numIter': 2000,  # Slightly reduced iterations
+    'initialTemp': 3000,  # Reduced initial temperature
+    'coolingFactor': 0.97,  # Slightly increased cooling factor for smoother cooling
     'minTemp': 1.0,
     'fit': True,
-    'padding': 30  # Reduced from 500
+    'padding': 20  # Further reduced padding
 }
 
 # Default layout settings (for backwards compatibility)
 DEFAULT_LAYOUT_SETTINGS = {
     'animate': True,
-    'nodeRepulsion': 25000,
-    'idealEdgeLength': 827,
+    'animationDuration': 100,
+    'animationEasing': 'ease-in-out-cubic',
+    'nodeRepulsion': 20000,
+    'idealEdgeLength': 500,
     'nodeDimensionsIncludeLabels': True
 }
