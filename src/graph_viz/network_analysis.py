@@ -1,4 +1,5 @@
 import networkx as nx
+import numpy as np
 from collections import Counter
 
 def calculate_connection_strength(G, core_nodes):
@@ -213,3 +214,46 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
         ]
 
     return cyto_elements
+
+
+def get_node_edge_counts(G, timestamp, core_nodes):
+    visible_nodes = set(core_nodes)
+    visible_edges = 0
+
+    for u, v, data in G.edges(data=True):
+        if data['timestamp'] <= timestamp:
+            visible_nodes.add(u)
+            visible_nodes.add(v)
+            visible_edges += 1
+
+    return len(visible_nodes), visible_edges
+
+def get_adjacency_matrix(G):
+    adj_matrix = nx.to_numpy_array(G)
+    username_mapping = nx.get_node_attributes(G, 'username')
+    usernames = [username_mapping.get(node, str(node)) for node in G.nodes()]
+    
+    # Ensure we're using usernames, not IDs
+    print("Debug: Usernames for adjacency matrix:", usernames)
+    
+    return adj_matrix, usernames
+
+def get_shortest_path_matrix(G):
+    username_mapping = nx.get_node_attributes(G, 'username')
+    shortest_paths = dict(nx.all_pairs_shortest_path_length(G))
+    
+    nodes = list(G.nodes())
+    n = len(nodes)
+    matrix = np.full((n, n), np.inf, dtype=float)
+    
+    for i, node1 in enumerate(nodes):
+        for j, node2 in enumerate(nodes):
+            if node1 in shortest_paths and node2 in shortest_paths[node1]:
+                matrix[i, j] = shortest_paths[node1][node2]
+    
+    usernames = [username_mapping.get(node, str(node)) for node in nodes]
+    
+    # Ensure we're using usernames, not IDs
+    print("Debug: Usernames for shortest path matrix:", usernames)
+    
+    return matrix, usernames

@@ -1,11 +1,11 @@
 import dash
-import dash_bootstrap_components as dbc
 from dash import Input, Output, State, no_update, html
 from dash.exceptions import PreventUpdate
 import networkx as nx
-import requests
+import plotly.graph_objs as go
+import numpy as np
 
-from src.graph_viz.network_analysis import filter_graph, get_elements
+from src.graph_viz.network_analysis import filter_graph, get_elements, get_adjacency_matrix, get_shortest_path_matrix
 from src.data_ingestion.fetch_data import DataFetcher
 from src.graph_processing.build_graph import GraphBuilder
 
@@ -14,75 +14,73 @@ def register_callbacks(app):
         Output('graph-store', 'data'),
         Output('loading-output', 'children'),
         Input('build-graph-button', 'n_clicks'),
-        State('user-ids-input', 'value'),
-        prevent_initial_call=True
+        State('user-ids-input', 'value')
     )
     def build_graph(n_clicks, user_ids_input):
         if n_clicks is None or not user_ids_input:
-            return no_update, no_update
+            raise PreventUpdate
 
         try:
             core_nodes = [uid.strip() for uid in user_ids_input.split(',') if uid.strip()]
 
-            # Fetch data using user-provided IDs
             fetcher = DataFetcher()
             all_user_data = fetcher.get_all_users_data(core_nodes)
 
-            # Build graph from fetched data
             gb = GraphBuilder()
             G = gb.build_graph_from_data(all_user_data)
 
-            # Filter the graph based on core nodes
             filtered_G = filter_graph(G, core_nodes)
 
-            # Get all timestamps and sort them
             all_timestamps = sorted([edge[2]['timestamp'] for edge in filtered_G.edges(data=True)])
             min_timestamp, max_timestamp = min(all_timestamps), max(all_timestamps)
 
-            # Convert the graph to a JSON serializable format
             graph_data = nx.readwrite.json_graph.node_link_data(filtered_G)
             graph_data['min_timestamp'] = min_timestamp
             graph_data['max_timestamp'] = max_timestamp
+            graph_data['core_nodes'] = core_nodes
 
-            # Update the loading-output div (can be empty string)
             return graph_data, ''
 
         except Exception as e:
-            # In case of error, handle the exception
-            return no_update, ''
+            return no_update, str(e)
 
     @app.callback(
         Output('cytoscape-graph', 'elements'),
+        Output('node-count', 'children'),
+        Output('edge-count', 'children'),
         Input('time-slider', 'value'),
         Input('cytoscape-graph', 'tapNodeData'),
-        Input('graph-store', 'data'),
-        State('user-ids-input', 'value')
+        Input('graph-store', 'data')
     )
-    def update_elements(selected_timestamp, tapNodeData, graph_data, user_ids_input):
+    def update_elements_and_metrics(selected_timestamp, tapNodeData, graph_data):
         if not graph_data:
-            return []
+            return [], "Nodes: 0", "Edges: 0"
 
-        # Reconstruct the graph
         G = nx.readwrite.json_graph.node_link_graph(graph_data, multigraph=True)
-
-        core_nodes = [uid.strip() for uid in user_ids_input.split(',') if uid.strip()]
+        core_nodes = graph_data['core_nodes']
 
         min_timestamp = graph_data['min_timestamp']
         max_timestamp = graph_data['max_timestamp']
-
-        # Calculate the actual timestamp based on the slider value
         actual_timestamp = min_timestamp + (selected_timestamp / 100) * (max_timestamp - min_timestamp)
 
-        # Get elements at the adjusted timestamp
         new_elements = get_elements(G, actual_timestamp, core_nodes, tapNodeData)
 
-        # Add transition animation to each element
         for element in new_elements:
             if 'position' not in element:
                 element['position'] = {'x': 0, 'y': 0}
             element['classes'] = 'fade'
 
-        return new_elements
+        visible_nodes = set()
+        visible_edges = 0
+        for element in new_elements:
+            if 'source' in element['data']:  # It's an edge
+                visible_edges += 1
+                visible_nodes.add(element['data']['source'])
+                visible_nodes.add(element['data']['target'])
+            else:  # It's a node
+                visible_nodes.add(element['data']['id'])
+
+        return new_elements, f"Nodes: {len(visible_nodes)}", f"Edges: {visible_edges}"
 
     @app.callback(
         Output('cytoscape-graph', 'layout'),
@@ -122,7 +120,6 @@ def register_callbacks(app):
             username = node_data['label']
             profile_url = f"https://warpcast.com/{username}"
             profile_image_url = node_data['pfp_url']
-            print(profile_image_url)
 
             node_info = [
                 html.Div([
@@ -188,3 +185,70 @@ def register_callbacks(app):
         if not elements:
             return dash.no_update, dash.no_update
         return 0.1, {'x': 0, 'y': 0}
+
+    @app.callback(
+        Output("matrices-modal", "is_open"),
+        [Input("open-matrices-modal", "n_clicks"), Input("close-matrices-modal", "n_clicks")],
+        [State("matrices-modal", "is_open")],
+    )
+    def toggle_matrices_modal(n1, n2, is_open):
+        if n1 or n2:
+            return not is_open
+        return is_open
+
+    @app.callback(
+        Output('adjacency-matrix', 'figure'),
+        Output('shortest-path-matrix', 'figure'),
+        Input('graph-store', 'data'),
+        Input('time-slider', 'value')
+    )
+    def update_matrices(graph_data, time_slider_value):
+        if not graph_data:
+            return {}, {}
+        
+        G = nx.readwrite.json_graph.node_link_graph(graph_data, multigraph=True)
+        min_timestamp = graph_data['min_timestamp']
+        max_timestamp = graph_data['max_timestamp']
+        current_timestamp = min_timestamp + (time_slider_value / 100) * (max_timestamp - min_timestamp)
+        
+        # Filter the graph based on the current timestamp
+        G_filtered = nx.Graph((u, v, d) for (u, v, d) in G.edges(data=True) if d['timestamp'] <= current_timestamp)
+        
+        # Ensure node attributes are copied to the filtered graph
+        for node, data in G.nodes(data=True):
+            if node in G_filtered:
+                G_filtered.nodes[node].update(data)
+        
+        # Adjacency Matrix
+        adj_matrix, usernames = get_adjacency_matrix(G_filtered)
+        
+        adj_fig = go.Figure(data=go.Heatmap(
+            z=adj_matrix,
+            x=usernames,
+            y=usernames,
+            colorscale='Viridis'
+        ))
+        adj_fig.update_layout(
+            title='Adjacency Matrix',
+            xaxis_title='Usernames',
+            yaxis_title='Usernames',
+            xaxis_tickangle=-45
+        )
+        
+        # Shortest Path Matrix
+        sp_matrix, usernames = get_shortest_path_matrix(G_filtered)
+        
+        sp_fig = go.Figure(data=go.Heatmap(
+            z=sp_matrix,
+            x=usernames,
+            y=usernames,
+            colorscale='Viridis'
+        ))
+        sp_fig.update_layout(
+            title='Shortest Path Matrix',
+            xaxis_title='Usernames',
+            yaxis_title='Usernames',
+            xaxis_tickangle=-45
+        )
+        
+        return adj_fig, sp_fig
