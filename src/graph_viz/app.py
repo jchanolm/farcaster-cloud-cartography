@@ -41,11 +41,9 @@ app.layout = html.Div([
                 dcc.Input(id='user-ids-input', type='text', placeholder='Enter FIDs (comma-separated)', style={'width': '300px', 'margin-right': '12px'}),
                 html.Button('Build Graph', id='build-graph-button', n_clicks=0),
             ], style={'display': 'block', 'margin-left': '24px', 'margin-top': '6px'}),
-            # Instruction text
             html.Div([
                 html.I("Click nodes for account details, click edges for relationship details."),
-            ],
-                     style={'text-align': 'left', 'padding': '6px', 'font-style': 'italic', 'margin-left': '24px'}),
+            ], style={'text-align': 'left', 'padding': '6px', 'font-style': 'italic', 'margin-left': '24px'}),
         ], style={'display': 'inline-block', 'width': '60%'}),
         html.Div([
             html.H5("Network Metrics", style={'font-family': 'Open Sans, sans-serif', 'margin-bottom': '3px'}),
@@ -116,6 +114,25 @@ app.layout = html.Div([
         ),
     ], id="matrices-modal", size="xl"),
     
+    # Modal for Node and Edge Metadata
+    dbc.Modal(
+    [
+        dbc.ModalHeader(id="modal-header"),
+        dbc.ModalBody([
+            html.Div(id='modal-content')
+        ]),
+        dbc.ModalFooter(
+            dbc.Button("Close", id="close-modal", className="ms-auto", n_clicks=0)
+        ),
+    ],
+    id="metadata-modal",
+    is_open=False,
+    size="lg",
+    scrollable=True,
+    backdrop="static",
+    centered=True,
+    ),
+    
     # Store Components
     dcc.Store(id='graph-store'),
     dcc.Store(id='timestamp-store'),
@@ -131,24 +148,6 @@ app.layout = html.Div([
             ], style={'position': 'relative', 'height': '100%'})
         ),
     ]),
-    
-    # Modal for Node and Edge Metadata
-    dbc.Modal(
-    [
-        dbc.ModalBody([
-            html.Div(id='modal-content')
-        ]),
-        dbc.ModalFooter(
-            dbc.Button("Close", id="close-modal", className="ms-auto", n_clicks=0)
-        ),
-    ],
-    id="metadata-modal",
-    is_open=False,
-    size="lg",
-    scrollable=True,
-    backdrop="static",
-    centered=True,
-    ),
 ])
 
 # Register callbacks
