@@ -57,7 +57,7 @@ app.layout = html.Div([
             html.Button('View Matrices', id='open-matrices-modal', n_clicks=0, style={'margin-top': '-14px'}),
         ], style={'display': 'inline-block', 'width': '20%', 'vertical-align': 'top', 'padding-top': '24px'}),
         html.Div([
-            html.H5("Select Layout Algo", style={
+            html.H5("Layout Algo", style={
                 'margin-right': '12px',
                 'font-family': 'Open Sans, sans-serif'
             }),
