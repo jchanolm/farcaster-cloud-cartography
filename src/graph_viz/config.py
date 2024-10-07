@@ -1,3 +1,5 @@
+import datetime 
+
 # Application settings
 DEBUG = True
 PORT = 8050
@@ -23,9 +25,6 @@ COLORS = {
 MIN_EDGE_WIDTH = 1.5
 MAX_EDGE_WIDTH = 15
 
-# Time slider settings
-TIME_SLIDER_MARKS = {i: str(i) for i in range(0, 101, 10)}
-
 # Cytoscape settings
 CYTOSCAPE_STYLE = {
     'width': '100%',
@@ -36,13 +35,9 @@ CYTOSCAPE_STYLE = {
 # Layout options for dropdown
 LAYOUT_OPTIONS = [
     {'label': 'Circle', 'value': 'circle'},
-    {'label': 'Concentric', 'value': 'concentric'},
-    {'label': 'Cose', 'value': 'cose'},
     {'label': 'Grid', 'value': 'grid'},
     {'label': 'Breadthfirst', 'value': 'breadthfirst'},
-    {'label': 'Cose-Bilkent', 'value': 'cose-bilkent'},
-    {'label': 'Dagre', 'value': 'dagre'},
-    {'label': 'Klay', 'value': 'klay'},
+    {'label': 'Cose-Bilkent [Default]', 'value': 'cose-bilkent'},
 ]
 
 # Cytoscape layout settings

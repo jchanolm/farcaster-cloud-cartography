@@ -7,76 +7,90 @@ from src.graph_viz.layout_and_styling import cyto_stylesheet
 from src.graph_viz.callbacks import register_callbacks
 from src.graph_viz.config import (
     DEBUG, PORT, DEFAULT_LAYOUT, CYTOSCAPE_STYLE, 
-    TIME_SLIDER_MARKS, LAYOUT_OPTIONS, CYTOSCAPE_LAYOUT_SETTINGS
+    LAYOUT_OPTIONS, CYTOSCAPE_LAYOUT_SETTINGS
 )
 
 # Load extra layouts for Cytoscape
 cyto.load_extra_layouts()
 
-# Initialize the Dash app with Bootstrap stylesheet
-app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, 'https://use.fontawesome.com/releases/v5.8.1/css/all.css'])
+# Initialize the Dash app with Bootstrap stylesheet and Open Sans font
+app = Dash(__name__, external_stylesheets=[
+    dbc.themes.BOOTSTRAP, 
+    'https://use.fontawesome.com/releases/v5.8.1/css/all.css',
+    'https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap'
+])
 
 # Define the app layout
 app.layout = html.Div([
-    # Header Section
+    # Header Section with User IDs Input, Network Metrics, and Layout Algorithm Selection
     html.Div([
-        html.H2(
-            "Cloud Cartography - Farcaster",
-            style={
-                'color': 'black',
-                'display': 'inline-block',
-                'margin-right': '20px'
-            }
-        ),
-    ]),
+        html.Div([
+            html.H2(
+                "Cloud Cartography",
+                style={
+                    'color': 'black',
+                    'display': 'inline-block',
+                    'margin-right': '24px',
+                    'margin-left': '24px',
+                    'margin-top': '24px',
+                    'margin-bottom': '12px',
+                    'font-family': 'Open Sans, sans-serif'
+                }
+            ),
+            html.Div([
+                dcc.Input(id='user-ids-input', type='text', placeholder='Enter FIDs (comma-separated)', style={'width': '300px', 'margin-right': '12px'}),
+                html.Button('Build Graph', id='build-graph-button', n_clicks=0),
+            ], style={'display': 'inline-block', 'vertical-align': 'middle'}),
+        ], style={'display': 'inline-block', 'width': '60%'}),
+        html.Div([
+            html.H4("Network Metrics", style={'font-family': 'Open Sans, sans-serif', 'margin-bottom': '6px'}),
+            html.Div([
+                html.Div(id='node-count', style={'display': 'inline-block', 'margin-right': '12px'}),
+                html.Div(id='edge-count', style={'display': 'inline-block'}),
+            ]),
+            html.Button('View Matrices', id='open-matrices-modal', n_clicks=0, style={'margin-top': '6px'}),
+        ], style={'display': 'inline-block', 'width': '20%', 'vertical-align': 'top', 'padding-top': '24px'}),
+        html.Div([
+            html.H4("Select Layout Algo", style={
+                'margin-right': '12px',
+                'font-family': 'Open Sans, sans-serif'
+            }),
+            html.Div([
+                dcc.Dropdown(
+                    id='layout-dropdown',
+                    options=LAYOUT_OPTIONS,
+                    value=DEFAULT_LAYOUT,
+                    clearable=False,
+                    style={'width': '200px', 'display': 'inline-block'}
+                ),
+                html.I(className="fas fa-caret-down", style={'margin-left': '-20px', 'pointer-events': 'none'})
+            ], style={'display': 'inline-block', 'position': 'relative'}),
+        ], style={'display': 'inline-block', 'width': '20%', 'vertical-align': 'top', 'padding-top': '24px'}),
+    ], style={'margin-bottom': '12px'}),
+        
+    # Time Slider
+    html.Div([
+        dcc.Slider(id='time-slider', min=0, max=100, value=0, marks={}, step=10),
+    ], style={'margin-bottom': '12px', 'padding-left': '24px'}),
     
     # Main content area
     html.Div([
-        # Left column: Input, Controls, and Graph
-        html.Div([
-            # User IDs Input
-            html.Label('Enter User IDs (comma separated):', style={'color': 'black'}),
-            dcc.Input(id='user-ids-input', type='text', placeholder='Enter User IDs (comma-separated)', style={'width': '50%', 'margin-bottom': '20px'}),
-            html.Button('Build Graph', id='build-graph-button', n_clicks=0, style={'margin-bottom': '20px'}),
-            
-            # Layout Algorithm Selection
-            html.H4("Select Layout Algorithm [Optional]", style={'margin-top': '20px', 'margin-bottom': '10px'}),
-            dcc.Dropdown(id='layout-dropdown', options=LAYOUT_OPTIONS, value=DEFAULT_LAYOUT, clearable=False, style={'margin-bottom': '10px'}),
-            
-            # Time Slider
-            dcc.Slider(id='time-slider', min=0, max=100, value=0, marks=TIME_SLIDER_MARKS, step=None),
-            
-            # Cytoscape Graph Component
-            cyto.Cytoscape(
-                id='cytoscape-graph',
-                elements=[],
-                style=CYTOSCAPE_STYLE,
-                layout={'name': DEFAULT_LAYOUT, **CYTOSCAPE_LAYOUT_SETTINGS, 'fit': False, 'zoom': 0.05, 'pan': {'x': 0, 'y': 0}},
-                stylesheet=cyto_stylesheet,
-                minZoom=0.05,
-                maxZoom=2,
-                autoungrabify=True,
-                userZoomingEnabled=True,
-                userPanningEnabled=True,
-                boxSelectionEnabled=True
-            ),
-        ], style={'width': '70%', 'display': 'inline-block', 'vertical-align': 'top'}),
-        
-        # Right column: Metrics
-        html.Div([
-            html.H4("Network Metrics"),
-            html.Div(id='node-count', style={'margin-bottom': '10px'}),
-            html.Div(id='edge-count', style={'margin-bottom': '10px'}),
-            html.Button('View Matrices', id='open-matrices-modal', n_clicks=0, style={'margin-top': '20px'}),
-        ], style={'width': '30%', 'display': 'inline-block', 'vertical-align': 'top', 'padding-left': '20px'}),
-    ]),
+        # Cytoscape Graph Component
+        cyto.Cytoscape(
+            id='cytoscape-graph',
+            elements=[],
+            style=CYTOSCAPE_STYLE,
+            layout={'name': DEFAULT_LAYOUT, **CYTOSCAPE_LAYOUT_SETTINGS, 'fit': True},
+            stylesheet=cyto_stylesheet,
+            minZoom=0.1,
+            maxZoom=3,
+            autoungrabify=True,
+            userZoomingEnabled=True,
+            userPanningEnabled=True,
+            boxSelectionEnabled=True
+        ),
+    ], style={'height': 'calc(85vh - 100px)', 'padding-left': '24px'}),
 
-    # Scroll down indicator
-    html.Div([
-        html.I(className="fas fa-chevron-down"),
-        html.Span("Scroll for more", style={'margin-left': '10px'})
-    ], style={'text-align': 'center', 'margin-top': '20px', 'margin-bottom': '20px'}),
-    
     # Matrices Modal
     dbc.Modal([
         dbc.ModalHeader("Network Matrices"),
@@ -93,27 +107,17 @@ app.layout = html.Div([
         ),
     ], id="matrices-modal", size="xl"),
     
-    # Store Component to Hold Graph Data
+    # Store Components
     dcc.Store(id='graph-store'),
+    dcc.Store(id='timestamp-store'),
     
-    # Loading Overlay with Text
+    # Loading Overlay
     html.Div([
         dcc.Loading(
             id='loading',
             type='circle',
             fullscreen=True,
             children=html.Div([
-                html.Div(
-                    "Fetching data from Farcaster...",
-                    style={
-                        'position': 'absolute',
-                        'top': '50%',
-                        'left': '50%',
-                        'transform': 'translate(-50%, -60%)',
-                        'fontSize': '18px',
-                        'color': 'black'
-                    }
-                ),
                 html.Div(id='loading-output')
             ], style={'position': 'relative', 'height': '100%'})
         ),

@@ -5,6 +5,11 @@ import networkx as nx
 import plotly.graph_objs as go
 import numpy as np
 
+import sys 
+import os 
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from src.graph_viz.network_analysis import filter_graph, get_elements, get_adjacency_matrix, get_shortest_path_matrix
 from src.data_ingestion.fetch_data import DataFetcher
 from src.graph_processing.build_graph import GraphBuilder
@@ -13,6 +18,8 @@ def register_callbacks(app):
     @app.callback(
         Output('graph-store', 'data'),
         Output('loading-output', 'children'),
+        Output('node-count', 'children'),
+        Output('edge-count', 'children'),
         Input('build-graph-button', 'n_clicks'),
         State('user-ids-input', 'value')
     )
@@ -39,28 +46,56 @@ def register_callbacks(app):
             graph_data['max_timestamp'] = max_timestamp
             graph_data['core_nodes'] = core_nodes
 
-            return graph_data, ''
+            node_count = filtered_G.number_of_nodes()
+            edge_count = filtered_G.number_of_edges()
+
+            return graph_data, '', f"Nodes: {node_count}", f"Edges: {edge_count}"
 
         except Exception as e:
-            return no_update, str(e)
+            return no_update, str(e), no_update, no_update
 
     @app.callback(
-        Output('cytoscape-graph', 'elements'),
-        Output('node-count', 'children'),
-        Output('edge-count', 'children'),
-        Input('time-slider', 'value'),
-        Input('cytoscape-graph', 'tapNodeData'),
+        Output('timestamp-store', 'data'),
+        Output('time-slider', 'marks'),
         Input('graph-store', 'data')
     )
-    def update_elements_and_metrics(selected_timestamp, tapNodeData, graph_data):
+    def update_timestamp_data(graph_data):
         if not graph_data:
+            return {}, {}
+        
+        min_timestamp = graph_data['min_timestamp']
+        max_timestamp = graph_data['max_timestamp']
+        
+        timestamp_data = {
+            'min_timestamp': min_timestamp,
+            'max_timestamp': max_timestamp
+        }
+                
+        return timestamp_data, {}
+
+    @app.callback(
+        Output('cytoscape-graph', 'elements', allow_duplicate=True),
+        Output('node-count', 'children', allow_duplicate=True),
+        Output('edge-count', 'children', allow_duplicate=True),
+        Input('time-slider', 'value'),
+        Input('cytoscape-graph', 'tapNodeData'),
+        Input('graph-store', 'data'),
+        Input('timestamp-store', 'data'),
+        prevent_initial_call=True
+    )
+    def update_elements_and_metrics(selected_timestamp, tapNodeData, graph_data, timestamp_data):
+        ctx = dash.callback_context
+        if not ctx.triggered:
+            return dash.no_update, dash.no_update, dash.no_update
+
+        if not graph_data or not timestamp_data:
             return [], "Nodes: 0", "Edges: 0"
 
         G = nx.readwrite.json_graph.node_link_graph(graph_data, multigraph=True)
         core_nodes = graph_data['core_nodes']
 
-        min_timestamp = graph_data['min_timestamp']
-        max_timestamp = graph_data['max_timestamp']
+        min_timestamp = timestamp_data['min_timestamp']
+        max_timestamp = timestamp_data['max_timestamp']
         actual_timestamp = min_timestamp + (selected_timestamp / 100) * (max_timestamp - min_timestamp)
 
         new_elements = get_elements(G, actual_timestamp, core_nodes, tapNodeData)
@@ -96,9 +131,9 @@ def register_callbacks(app):
         }
 
     @app.callback(
-        Output('metadata-modal', 'is_open'),
-        Output('modal-content', 'children'),
-        Output('metadata-modal', 'style'),
+        Output('metadata-modal', 'is_open', allow_duplicate=True),
+        Output('modal-content', 'children', allow_duplicate=True),
+        Output('metadata-modal', 'style', allow_duplicate=True),
         Input('cytoscape-graph', 'tapNodeData'),
         Input('cytoscape-graph', 'tapEdgeData'),
         Input('close-modal', 'n_clicks'),
@@ -117,7 +152,7 @@ def register_callbacks(app):
             return False, dash.no_update, {'display': 'none'}
 
         if node_data:
-            username = node_data['label']
+            username = node_data['label']  # Changed from 'username' to 'label'
             profile_url = f"https://warpcast.com/{username}"
             profile_image_url = node_data['pfp_url']
 
@@ -145,28 +180,28 @@ def register_callbacks(app):
             
             node_info.append(
                 html.A("View on Warpcast", href=profile_url, target="_blank", 
-                       style={'display': 'block', 'marginTop': '20px', 'textAlign': 'center'})
+                    style={'display': 'block', 'marginTop': '20px', 'textAlign': 'center'})
             )
             
             return True, node_info, {'display': 'block'}
 
         elif edge_data:
-            source = edge_data['source']
-            target = edge_data['target']
+            source_username = edge_data['source_username']
+            target_username = edge_data['target_username']
+            total_interactions = edge_data['weight']
             
             edge_info = [
-                html.H3(f"Edge: {source} ↔ {target}"),
-                html.P(f"Total Interactions: {edge_data['weight']}")
+                html.H4(f"Interaction between {source_username} and {target_username}"),
+                html.P(f"Total interactions: {total_interactions}")
             ]
 
-            for node in [source, target]:
-                interactions = edge_data['interactions'][node]
-                total_interactions = sum(interactions.values())
+            for username, node_id in [(source_username, edge_data['source']), (target_username, edge_data['target'])]:
+                interactions = edge_data['interactions'][node_id]
+                node_total_interactions = sum(interactions.values())
                 edge_info.extend([
-                    html.H4(f"Node {node}:"),
-                    html.P(f"{total_interactions} interactions initiated"),
+                    html.H6(f"{username} initiated {node_total_interactions} interactions:"),
                     html.Ul([
-                        html.Li(f"{count} {edge_type.lower()}{'s' if count > 1 else ''}")
+                        html.Li(f"{count} {edge_type.upper()}{'' if count > 1 else ''}")
                         for edge_type, count in interactions.items()
                     ])
                 ])

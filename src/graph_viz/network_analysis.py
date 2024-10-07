@@ -55,6 +55,8 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
                         'data': {
                             'source': source,
                             'target': target,
+                            'source_username': G.nodes[source].get('username', source),  # Add username
+                            'target_username': G.nodes[target].get('username', target),  # Add username
                             'weight': 1,
                             'edge_types': Counter([edge_type]),
                             'edge_to_core': 'false',  # Default value
@@ -151,7 +153,6 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
             else:
                 node_color = "rgb(0, 0, 255)"  # Default color if max_betweenness is 0
 
-
         cyto_elements.append(
             {
                 'data': {
@@ -171,7 +172,9 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
                     'pfp_url': data.get('pfp_url')
                 }
             }
-        )    # Only include edges if it's not the initial stage (timestamp > min_timestamp)
+        )
+    
+    # Only include edges if it's not the initial stage (timestamp > min_timestamp)
     if timestamp > min_timestamp:
         cyto_elements.extend(list(edge_dict.values()))
 
@@ -214,7 +217,6 @@ def get_elements(G, timestamp, core_nodes, tapNodeData=None):
         ]
 
     return cyto_elements
-
 
 def get_node_edge_counts(G, timestamp, core_nodes):
     visible_nodes = set(core_nodes)

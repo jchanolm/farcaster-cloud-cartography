@@ -58,7 +58,7 @@ cyto_stylesheet = [
     {
         'selector': 'node[is_core = "true"]',
         'style': {
-            'background-color': COLORS['CORE_NODE'],
+            'background-color': '#8A2BE2',  # Warpcast purple
             'shape': 'star',
         }
     },
@@ -127,7 +127,7 @@ def get_node_size(is_core, connected_core_nodes):
 
 def get_node_color(is_core, betweenness, max_betweenness):
     if is_core:
-        return COLORS['CORE_NODE']
+        return '#8A2BE2'  # Warpcast purple
     elif max_betweenness > 0:
         return f"rgb({int(255 * betweenness / max_betweenness)}, 0, 255)"
     else:
