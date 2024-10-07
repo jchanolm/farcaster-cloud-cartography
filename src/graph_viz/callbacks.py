@@ -100,11 +100,6 @@ def register_callbacks(app):
 
         new_elements = get_elements(G, actual_timestamp, core_nodes, tapNodeData)
 
-        for element in new_elements:
-            if 'position' not in element:
-                element['position'] = {'x': 0, 'y': 0}
-            element['classes'] = 'fade'
-
         visible_nodes = set()
         visible_edges = 0
         for element in new_elements:
@@ -215,11 +210,11 @@ def register_callbacks(app):
         Output('cytoscape-graph', 'pan'),
         Input('cytoscape-graph', 'elements'),
         prevent_initial_call=True
-    )
+    )   
     def adjust_zoom_on_render(elements):
         if not elements:
             return dash.no_update, dash.no_update
-        return 0.1, {'x': 0, 'y': 0}
+        return None, {'x': 0, 'y': 0}  # Let Cytoscape handle the initial zoom
 
     @app.callback(
         Output("matrices-modal", "is_open"),
